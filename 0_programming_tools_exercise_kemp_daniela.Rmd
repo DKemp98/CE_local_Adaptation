@@ -1,0 +1,420 @@
+---
+title: "0_programming_tools_exercise_kemp_daniela"
+author: "Daniela Kemp"
+date: "2023-11-10"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())    # this empties the work space (top-right window in RStudio)
+#install.packages("scales")
+#install.packages("paletteer")
+
+library("scales")
+library("paletteer")
+library("ggplot2")
+
+set.seed(555) 
+```
+
+                                         ----
+ 1. MATHEMATICAL MODEL (15 points) .......................... ----
+ 1.1 define & debug function (10 points) ----
+
+```{r 1.1 mathematical model}
+harvest_BevHolt_math<-function(N0, b, l_max, years, quota_N, quota_T){
+
+  Nadlt    <- N0                                 
+  dataMath <- NULL                               
+  dataMath <- rbind(dataMath, c(0, N0)) 
+  
+  for(t in 1:years){                             
+    if (t>=quota_T){                             # if the quota_T has been reached,
+      Nadlt <- Nadlt-quota_N                     # remove some adults
+    }
+    indFec   <- l_max / (1 + b * Nadlt)          
+    Noff     <- Nadlt * indFec                  
+    if (Noff<0){
+      Noff <- 0
+    }
+    Nadlt    <- Noff                            
+    dataMath <- rbind(dataMath, c(t, Nadlt))     
+    
+  }
+  colnames(dataMath) <- c("year", "N")
+  return(dataMath)
+  
+}
+```
+ 1.2 explore parameter space (5 points)  ----
+
+ With help of the function "harvest_BevHolt_math", determine the maximum harvest quota "quota_N" that does NOT drive the population to extinction.
+ Use the following parameter values: b=0.001, l_max=1.4, N0=10, years=1000, quota_T=200.
+Create a single plot to illustrate your result. In this plot, you should show the results for (at least) two quota_N beside each other.
+
+
+
+```{r 1.2.1 function to iterate through quotas, echo=FALSE}
+build_populations<-function(iterator){
+  colNum<-length(iterator)
+  populationTable<-harvest_BevHolt_math(b=0.001, l_max=1.4, N0=10, years=1000, quota_T=200, quota_N = 0)
+  
+  colnames(populationTable)<-c("year","quota_N=0")  
+  for (i in iterator){
+    new_values <-harvest_BevHolt_math(b=0.001, l_max=1.4, N0=10, years=1000, quota_T=200, quota_N = i)
+    colnames(new_values)<-c("year",paste("quota_N=",i,sep=""))
+    populationTable <- merge(populationTable,new_values)
+  }
+  colornames<-palette(hcl.colors(colNum, "viridis"))
+  result<-list("populationTable"=populationTable,"colNum"=colNum,"colornames"=colornames)
+  return(result)
+}
+```
+
+Actually call the function
+```{r 1.2.1 Plot:first overview , fig.width=9,fig.height=5}
+iterate_by_five<-seq(0,100,5)
+result<-build_populations(iterate_by_five)
+
+plot( x=result$populationTable[,"year"], y=result$populationTable[,"quota_N=0"], col="black", lty=1, lwd=3, las=1, type="p", pch=16, xlab="time", ylab="population size (N)", ylim=c(0,500)) # 
+for (i in 1:result$colNum){
+lines(x=result$populationTable[,"year"],y=result$populationTable[,i+1], lty=2, col=result$colornames[i], lwd=2)}
+
+```
+30 is the last number with a stable population, but maybe we can hunt/harvest more? Can't hurt to try!
+
+```{r 1.2.2 Plot:closer look at the range of maybe sustainable harvesting , fig.width=9,fig.height=5}
+result_close<-build_populations(seq(25,35,1))
+
+plot( x=result_close$populationTable[,"year"], y=result_close$populationTable[,"quota_N=0"], col="black", lty=1, lwd=3, las=1, type="p", pch=16, xlab="time", ylab="population size (N)", ylim=c(0,500)) # 
+for (i in 1:result_close$colNum){
+  lines(x=result_close$populationTable[,"year"],y=result_close$populationTable[,i+1], lty=2, col=result_close$colornames[i], lwd=2)}
+
+```
+-> 33 seems to be the maximum number possible to harvest without a population collaps
+
+ 2. INDIVIDUAL-BASED SIMULATIONS (25 points) ................ ----
+ 2.1 define & debug function (10 points) ----
+
+ Define a function called "harvest_BevHolt_sim" with input parameters N0, b, l_max, years, quota_N, quota_T.
+ This function should allow you to run stochastic individual-based simulations, with density-dependent growth following the Beverton-Holt model AND harvesting.
+ To a large extent, this function shall be similar to function logisticGrowth_BevHolt_sim() in script "1_LogGrowth_BevHolt.R" (Lecture 3).
+ But it should include an additional annual event, after aging and before storing the summary statistics: harvesting ! 
+ Harvesting should only be done after a certain point in time (set by "quota_T"). But starting from "quota_T" harvesting then should happen every year! 
+ Harvesting should be implemented in the form of a fixed quota when precisely "quota_N" adult individuals are "removed" from the population each year.
+```{r 2.1 define individual based simulation function}
+logisticGrowth_BevHolt_sim <- function(N0=2, b=0.001, l_max=1.4, years=50,quota_N=0, quota_T=50){
+  
+  ADLT           <- matrix(1, ncol=1, nrow=N0)    
+  colnames(ADLT) <- "patch"                        
+  sumStats      <- NULL                            
+  sumStats      <- rbind(sumStats, c(0,N0))        
+  
+  # loop through the annual events ......................................
+  for(t in 1:years){ 
+    N       <- nrow(ADLT)  
+    
+    if (t>=quota_T){ #if the quota_T allows it, quota N adults are taken before they can reproduce.
+      N     <- N-quota_N
+    }
+    
+    ifelse(N>1, #clause to deal with unexpected behaviour for below zero individuals. N>1 instead of N>0 because I assume we have sexual reproduction, needing two individuals. 
+           
+    {Fec     <- l_max / (1+b*N)                      #standard case, as in the original function
+    indFec  <- rpois(n=N, lambda=Fec)              
+    OFF     <- matrix(1, ncol=1, nrow= sum(indFec))},
+    
+    OFF     <- matrix(2,ncol=1, nrow=0)              #case for not enough individuals, OFF is effectively set to zero
+    ) 
+    colnames(OFF) <- "patch"                       
+    # 2) aging (adults die, offspring become adults)
+    ADLT     <- OFF                                 
+    #rm(OFF)                                         
+    # 3) store summary statistics
+    sumStats <- rbind(sumStats, c(t,nrow(ADLT)))    # extract summery statistics and store them in sumStats
+    
+  }
+  colnames(sumStats) <- c("year", "size")
+  return(sumStats)
+
+}
+
+```
+
+DEBUGGING: Code carefully, then do a first simulation run, and eventually create a first test plot. Does it make sense?
+```{r 2.1 first Plot with parameters similar to default}
+try1<-logisticGrowth_BevHolt_sim(quota_N = 20, quota_T = 60,years = 100)
+plot(x=try1[,"year"],y=try1[,"size"],xlab="time", ylab="population size (N)", ylim=c(0,500),type="l")
+```
+DEBUGGING: At last, compare the simulation results to the results of the mathematical model using the previously defined function harvest_BevHolt_math(). 
+ Plot both model results in the same plot. Make sure that simulation results and mathematical expectation are build from the same parameter values.
+```{r 2.1 compare models}
+#(b=0.001, l_max=1.4, N0=10, years=1000, quota_T=200, quota_N = i)
+same_paras_sim<-logisticGrowth_BevHolt_sim(N0=10,quota_N = 0, quota_T = 200,years = 1000)
+plot( x=result$populationTable[,"year"], y=result$populationTable[,"quota_N=0"], col="black", lty=1, lwd=3, las=1, xlab="time", ylab="population size (N)", ylim=c(0,500),type="l") # 
+lines(x=same_paras_sim[,"year"],y=same_paras_sim[,"size"],col="red")
+
+```
+
+2.2 replicates & burn-in (10 points)    ----
+
+Run 100 replicates for the following simulation parameters: b=0.001, l_max=1.4, N0=10, years=1000, quota_T=200, quota_N=30
+Store the population size after 1,000 years.
+
+```{r 2.2. replicate, ~15s runtime}
+set.seed(0815)
+for (i in 1:100){
+  new_instance<-logisticGrowth_BevHolt_sim(b=0.001, l_max=1.4, N0=10, years=1000, quota_T=200, quota_N=30)
+  colnames(new_instance)<-c("year",paste("try_",i,sep=""))
+  ifelse(i==1, burned_simu_T200_N30<-new_instance, burned_simu_T200_N30<-merge(burned_simu_T200_N30,new_instance))
+}
+
+```
+First, compute the proportion of extinct replicates after 1000 (the proportion of simulations where N dropped to 0)
+```{r 2.2.1 ratio extinct}
+table(burned_simu_T200_N30[1000,2:101]>0)
+extinct_proportion<- sum(burned_simu_T200_N30[1001,2:101]>0)/100
+extinct_proportion
+```
+
+Second, compute the average population size (N) after 1000 over all 100 replicates
+```{r 2.2.2 average population}
+avg_pop<-mean(as.numeric(burned_simu_T200_N30[1001,2:101]))
+avg_pop
+```
+Visualizing this to get a better feel for the data
+
+```{r 2.2.X visualization}
+plot(x=burned_simu_T200_N30[,"year"],y=burned_simu_T200_N30[,2], xlab="time", ylab="population size (N)", ylim=c(0,500),type="n")
+abline(v=200, lt=2, lwd=2,col="darkgrey")
+for (i in 1:100){
+  lines(x=burned_simu_T200_N30[,"year"],y=burned_simu_T200_N30[,i+1],lwd=2, col=ifelse(burned_simu_T200_N30[1000,i+1]==0, alpha("red",0.5),alpha("darkgreen",0.5)),type = "l")
+}
+```
+What is the point where population breaks down? Get the minimum value of a population that survived until the end:
+```{r 2.2.X }
+bottleneck_num_survivors<-lapply(burned_simu_T200_N30[200:1001,burned_simu_T200_N30[1001,]!=0], FUN=min)
+boxplot(unlist(bottleneck_num_survivors),ylim = c(0,200))
+summary(unlist(bottleneck_num_survivors))
+```
+Here, we can see that any drop below ~120 individuals is almost always fatal, if hunting is continued, while 151.5 is the median, meaning that half of the surviving populations (and none of the extinct ones, so survivorship bias massivly applies here) could recover from here. (Mean is somewhat influenced by year=199, which I was not able to easily remove)
+
+# 2.3 explore parameter space (5 points)  ----
+
+# Now, explore the parameter space systematically.
+# Run 100 replicates with the following parameters (b=0.001, l_max=1.4, N0=10, years=1000, quota_T=100) and vary the harvest quota. 
+# Store the results for different quota_N in a vector or matrix. 
+# Chose a range of "quota_N" values to show the transition from population survival to population extinction.
+# Specifically, determine the maximum quota that allows harvesting without any risk of population extinction.
+
+
+```{r 2.3 parameter space exploration ~110s}
+set.seed(13)
+#Here, I'll use transposed matrices, as it is generally easier to filter by column then by row, and all the fancy visualization would benefit from such filtering
+quota_N<-c(0,5,10,15,20,25,26,27,28,29,30,31,35)
+for (q in quota_N){
+  for (i in 1:100){
+    if(q==0 && i==1) {
+      big_burn<-logisticGrowth_BevHolt_sim(b=0.001, l_max=1.4, N0=10, years=1000, quota_T=100, quota_N=q)
+      big_burn<-cbind(t(big_burn[,"size"]),q,i)
+      colnames(big_burn)<-c(paste("t",seq(0:1000),sep = ""),"quota_N", paste("experiment_number"))
+    }
+    instance_new<-c(logisticGrowth_BevHolt_sim(b=0.001, l_max=1.4, N0=10, years=1000, quota_T=100, quota_N=q)[,"size"], q,i)
+    big_burn<-rbind(big_burn,instance_new)
+  }
+}
+```
+
+To get a feel for the data, I will explore it graphically and look into specific ranges of interest
+```{r 2.3.X1 Plot boxplots fig.width=8,fig.height=5}
+#dev.off()
+ggplot(data.frame(big_burn), aes(y=t1001, x=factor(quota_N)))+geom_boxplot()
+
+```
+
+```{r 2.3.X2 distribution of end populations relevant range}
+for (numbers in 26:28){
+  print(table(subset(big_burn[,"t1001"],subset = big_burn[,"quota_N"]==numbers)))
+}
+```
+
+```{r 2.3.X3 Massiv, gigantic plot to visualize as much of the data as possible fig.width=11,fig.height=9}
+#Plot might be better viewed in a separate, big window. Or as a poster...
+plot(x=burned_simu_T200_N30[,"year"],y=burned_simu_T200_N30[,2], xlab="time", ylab="population size (N)", ylim=c(0,500),type="n")
+
+used_quotas<-length(table(big_burn[,"quota_N"]))
+#install.packages("paletteer")
+library("paletteer")
+extinction_col<-rev(paletteer_c("grDevices::heat.colors", used_quotas))
+survivor_col<-rev(paletteer_dynamic("cartography::turquoise.pal", used_quotas))
+survivor_col<-paletteer_c("grDevices::GnBu", used_quotas) 
+par(mar = c(8, 5, 2, 2.1))
+
+plot(big_burn[1,], xlab="time", ylab="population size (N)", ylim=c(0,500),type="n", cex=0.7)
+abline(v=100, lt=2, lwd=2,col="darkgrey")
+
+for (i in seq(1,1300,20)){ #only 5 for each quota_N, as this is somewhat enough to show the general development
+  col_index<-which(quota_N==big_burn[i,"quota_N"])
+  color<-ifelse(big_burn[i,"t1001"]==0, alpha(extinction_col[col_index],0.5),alpha(survivor_col[col_index],0.5))
+  lines(big_burn[i,],lwd=1, col=color,type = "l")
+}
+legend(x = "bottom",
+       inset = c(0, -0.62),# Position
+       title = "exctinct populations by quota_N",
+       legend = unique(big_burn[,"quota_N"]),  # Legend texts
+       lty = 1,           # Line types
+       col = alpha(extinction_col,0.8),           # Line colors
+       lwd = 5,
+       cex = 0.5,
+       xpd = TRUE, 
+       horiz = TRUE) 
+legend(x = "bottom",
+       inset = c(0, -0.5),# Position
+       title = "surviving populations by quota_N",
+       legend = unique(big_burn[,"quota_N"]),  # Legend texts
+       lty = 1,           # Line types
+       col = alpha(survivor_col,0.8),           # Line colors
+       lwd = 5,
+       cex = 0.5,
+       xpd = TRUE, 
+       horiz = TRUE) 
+
+```
+Similar plot without distinction of surviving/extinct populations:
+```{r 2.3.X3 fig.width=11,fig.height=8}
+#Plot might be better viewed in a separate, big window. 
+no_distinction_col<-paletteer_c("ggthemes::Sunset-Sunrise Diverging", used_quotas) 
+
+par(mar = c(7, 5, 2, 2.1))
+plot(big_burn[1,], xlab="time", ylab="population size (N)", ylim=c(0,500),type="n")
+abline(v=100, lt=2, lwd=2,col="darkgrey")
+
+for (i in seq(2,1301,10)){ #only 10 for each quota_N, as this is enough for the trends
+  col_index<-which(quota_N==big_burn[i,"quota_N"])
+  color<-no_distinction_col[col_index]
+  lines(big_burn[i,],lwd=1, col=color,type = "l")
+}
+legend(x = "bottom",
+       inset = c(0, -0.5),# Position
+       title = "populations by quota_N",
+       legend = unique(big_burn[,"quota_N"]),  # Legend texts
+       lty = 1,           # Line types
+       col = alpha(no_distinction_col,0.8),           # Line colors
+       lwd = 5,
+       cex = 0.6,
+       xpd = TRUE, 
+       horiz = TRUE) 
+```
+# what is the maximum quota that allows constant harvesting without any population extinction ?
+
+quota_N=26 is the first of my runs with any population going extinct. (See 2.3.X1,2.3.X2)
+
+```{r 2.3.3 looking at problematic data point}
+burned_26<-subset(big_burn,subset = big_burn[,"quota_N"]==26)
+View(head(burned_26[order(burned_26[,"t200"]),]))
+```
+as this population went extinct at t=9, harvesting (which started at t=100) is not to blame
+
+# 3. BONUS (2 extra points) .................................. ----
+# 3.1 Develop a new strategy of harvesting (other than a fixed quota that is constant over the years) that 
+# a) reduces the risk of extinction (as compared to a constant quota; see exercise 2.3)
+# b) increases the average harvest gain (avg. number of harvested individuals per year, as compared to a constant quota; see exercise 2.3).
+# Use simulations to show that this alternative strategy fulfills both criteria. That means directly compare both strategies to each other!
+
+Here, if the population drops below a certain value - a liberally chosen 150 for default here, see 2.2.X for a source to support this number - hunting will be stopped until the population adjusts again, but for at least 2 years.
+```{r 3.1 Function definition}
+#Plot might be better viewed in a separate, big window. 
+logisticGrowth_BevHolt_sim_better <- function(N0=10, b=0.001, l_max=1.4, years=50,limit_N=160, quota_N=30){
+  
+  ADLT           <- matrix(1, ncol=1, nrow=N0)     
+  colnames(ADLT) <- "patch"                       
+  sumStats      <- NULL                           
+  sumStats      <- rbind(sumStats, c(0,N0))       
+  allowed       <- FALSE
+  count_forbidden<-0
+  
+  for(t in 1:years){ 
+    
+    N       <- nrow(ADLT)                          
+    ifelse(allowed, 
+           {ifelse(N>=limit_N, 
+                   {N<- N-quota_N}, 
+               {allowed<-FALSE
+               count_forbidden<-count_forbidden+1})},
+           {allowed<-TRUE
+           count_forbidden <- count_forbidden+1}
+    )
+
+    ifelse(N>1, 
+           {Fec     <- l_max / (1+b*N)         
+           indFec  <- rpois(n=N, lambda=Fec)     
+           OFF     <- matrix(1, ncol=1, nrow= sum(indFec))},
+           
+           OFF     <- matrix(2,ncol=1, nrow=0)
+    )  
+    colnames(OFF) <- "patch"                        
+    ADLT     <- OFF                                 
+    rm(OFF)                                         
+    sumStats <- rbind(sumStats, c(t,nrow(ADLT)))
+    
+  }
+  colnames(sumStats) <- c("year", "size")
+  
+  print(paste("Of ",years,"years, in ", count_forbidden, "years harvesting/hunting was forbidden"))
+  
+  return(sumStats)
+  
+}
+```
+Compare both strategies against each other.
+```{r 3.1.1 Run functions}
+set.seed(21)
+test_better<-logisticGrowth_BevHolt_sim_better(N0=10, b=0.001, l_max=1.4, years=1000,limit_N=160, quota_N=30)
+
+test_org<-logisticGrowth_BevHolt_sim(years=1000,N0=10,quota_N=26, quota_T = 100)
+```
+In the 1000 generations, 15 times a harvest of 30 individuals was not allowed. This comes to 985*30=29550 individuals that could be harvested.
+
+In the previous method, with the sustainable harvest rate of 26, 26*900=23400 (harvesting starts at t=100) indiviuals were harvested.
+
+Plotting the methods against each other, for 6 different quota_N
+```{r 3.1 plot fig.width=11,fig.height=9}
+#Plot might be better viewed in a separate, big window. 
+#set.seed(21)
+
+test_org<-logisticGrowth_BevHolt_sim(years=1000,N0=10,quota_N=26, quota_T = 100)
+
+plot(test_org[,"size"],type="l",ylim=c(0,500), xlab="time", ylab="population size (N)",cex=0.7)
+par(mar = c(7, 5, 2, 2.1))
+
+
+colors<-paletteer_c("ggthemes::Red-Gold", 6) 
+
+for (i in 1:6){
+  test_better<-logisticGrowth_BevHolt_sim_better(N0=10, b=0.001, l_max=1.4, years=1000,limit_N=160, quota_N=28+i)
+  lines(test_better,col=colors[i])
+}
+
+legend(x = "topright",
+       inset = c(0,-0.125),
+       legend = c("standard method (S), quota_N:26", "Recovery period method (Rp), quota_N:29","Rp, quota_N:30","Rp, quota_N:31","Rp,quota_N:32","Rp,quota_N:33", "Rp,quota_N:34"), 
+       lty = 1,          
+       col = c("black",colors),        
+       lwd = 2,
+       cex = 0.6,
+       xpd = TRUE) 
+abline(h=160,col="darkred",lt=2,lwd=2,cex=0.7)
+abline(v=100,col="darkgrey",lt=2,lwd=2,cex=0.7)
+
+text(x = 550,adj=0.1, y = 145, cex=0.6,"Rp.: Population size that forbids harvesting for 2 years", col="darkred") 
+text(x=110,adj=0.1, y=115,cex=0.6, "S:Starting \ntime for \nharvesting", col="darkgrey")
+```
+short search for a good quota_N, for limit_N=160
+Having run the lines 393-396 several times, we gain the following numbers for: 1000-(years without harvest)*quota_N
+```{r}
+harvest_yield<-matrix(c(28739,29250,30473,31264,31845,31994,28449,29550,30411,31200,31779,32062,28565,29550,30287,31008,31647,31586,28797,29610,30225,31008,31251,32266,28565,29490,30535,31008,31515, 31858,28681, 29550, 30287, 31200, 31251, 31382),nrow = 6, byrow = TRUE, dimnames = list(seq(1,6),seq(29,34,1)))
+harvest_yield
+boxplot(harvest_yield)
+```
+As 34 brings less of an improvement than previous increases and overlaps with the yield using quota_N:33, a good parameter here, using a fixed limit_N=160, would be 33.
