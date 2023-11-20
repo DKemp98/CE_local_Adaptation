@@ -27,6 +27,34 @@ column to than compute the new population
 
 ```{r Population Change}
 
+  Population <- function(N0=10, b=0.001, l_max=1.4, years=50) {
+  ADLT           <- matrix(1, ncol=1, nrow=N0)     
+  
+colnames(ADLT) <- "patch"                        
+  sumStats      <- NULL                            
+  sumStats      <- rbind(sumStats, c(0,N0))        
+  
+  for(t in 1:years){
+    
+    N       <- nrow(ADLT)                           
+    Fec     <- l_max / (1 + b * N)                      
+    indFec  <- rpois(n=N, lambda=Fec)               
+    OFF     <- matrix(1, ncol=1, nrow= sum(indFec)) 
+    colnames(OFF) <- "patch"                        
+    ADLT     <- OFF  
+    
+  if (t >= quota_T) {
+      harvesting <- min(quota_N, nrow(ADLT))
+      ADLT <- ADLT[sample(1:nrow(ADLT), size = nrow(ADLT)-harvesting, replace = F),] 
+      
+      }
+    sumStats <- rbind(sumStats, c(t,nrow(ADLT))) 
+}
+    colnames(sumStats) <- c("year", "size")
+  return(sumStats)
+
+}
+
 ```
 
 #Dispersal Function to model dispersal in one patch in one year given
