@@ -13,17 +13,21 @@ library("ggplot2")
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or
 by pressing *Ctrl+Alt+I*.
 
+ALL THE FOLLOWING FUNCTIONS, UP TO AND FUSION SHOULD ALSO HAVE A TABLE EITHER AS INPUT, OR WORK ON A TABLE THAT IS CHANGED THROUGH THEIR CALL.
+
 #Population Change Function to model population development in one year,
 given parameters:
 
-N0 - Number of adults in the patch 
-b - Growth rate 
-l_max - maximum population that may survive in the habitat 
-patch - on which patch we are working
+  N0 - Number of adults in the patch 
+  b - Growth rate 
+  l_max - maximum population that may survive in the habitat 
+  patch - on which patch we are working
 
 OR: we only take Patch as input, we have pre-defined the parameters for
 each patch, and do a short look up, and use the last row of the patch X
 column to than compute the new population
+Output:
+  N - new number of individuals
 
 ```{r Population Change}
 
@@ -31,17 +35,85 @@ column to than compute the new population
 
 #Dispersal Function to model dispersal in one patch in one year given
 parameters:
+  
+  disp_prob - probability to change the patch
 
-Patch - which patch are we looking at disp_prob - probability to change
-the patch
-
+Output: Updated number of individuals in both patches, randomly modeled 
 ```{r Dispersal}
 
 ```
 
-#Gamete Production Function to model gamete production for all
-individuals in one patch.
+#Gamete Production Individual
+Model the gamete production of one individual. Parameters:
 
-```{r}
+Patch - to see how well-fitted the individual is
+Genotype - [A,B,M]<-AA,BB,Mixed:AB, to see what kind of gametes the individual can produce,
+           and to check for fitness.
+f_max - how many gametes the individual would produce under optimal circumstances.
+h     - dominance coefficient, default set to 0.5
+s     - selection coefficient
+
+Output: a list/vector containing alleles eg.:c("A","A","A","A","A","B","B","B","B","B")
+```{r Gamete Individual}
 
 ```
+
+#Gamete Production population: 
+models the gamete production of one entire population, produces list of gametes.Parameters:
+
+Patch - which patch, has to be given to gamete individual
+Genotypes - a ratio, than in combination with number of indiviuals, or a count for all genotypes
+
+Output: an aggregated list/vector of all Gametes
+```{r Gamete Population}
+
+```
+#Fusion
+models the fusion of gametes in one patch. Parameters:
+
+Gamete_List - a vector/list of gametes, from which two gametes are randomly sampled until N individuals are created reached. 
+N - number of individuals that should be in the patch at the end
+
+Output: 3 numbers, describing the number of individuals in a patch with the genotypes A,B,M
+```{r Fusion}
+test_vector<-c("A","A","A","A","A","B","B","B","B","B","A","A","A","A","A","B","B","B","B","B","A","A","A","A","A","B","B","B","B","B")
+test_N<-12
+
+Fusion<-function(gamete_vector=test_vector,N=test_N){ 
+  A<-0
+  B<-0
+  M<-0
+  num_gametes<-length(gamete_vector)
+  
+  ifelse(N*2>num_gametes,
+    final_gametes<-gamete_vector[sample(num_gametes)],     
+    final_gametes<-gamete_vector[sample(num_gametes,size=N*2,replace=FALSE)])
+  
+  for (i in seq(1,length(final_gametes)-1,2)){
+    first<-final_gametes[i]
+    second<-final_gametes[i+1]
+    ifelse(first==second,
+           ifelse(first=="A",
+                  A<-A+1,
+                  B<-B+1),
+           M<-M+1)
+  }
+  return(c(A,B,M))
+}
+```
+
+#Combined
+models, given a number of years, the number of individuals of different genotypes in each patch. Parameters:
+
+years - number of years to model
+table - a table to fill with data
+...   - all parameters used in subsequent called functions
+```{r Combined}
+
+
+```
+- Es gibt nur einen Patch, bei dem überhaupt gejagt wird/die Population kurzzeitig stark eingeschränkt sein kann.
+- Unterschiedlich große Patches
+- Dispersion von Individuen, bevor die Anzahl auf N1/N2 getrimmt wird.
+- Variable Parameter für Populationsentwicklung 
+- Dispersion rate könnte von Gesamtmenge im Patch abhängen
