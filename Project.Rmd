@@ -47,11 +47,11 @@ colnames(ADLT) <- "patch"
     colnames(OFF) <- "patch"                        
     ADLT     <- OFF  
     
-  if (t >= quota_T) {
-      harvesting <- min(quota_N, nrow(ADLT))
-      ADLT <- ADLT[sample(1:nrow(ADLT), size = nrow(ADLT)-harvesting, replace = F),] 
+  #if (t >= quota_T) {
+   #   harvesting <- min(quota_N, nrow(ADLT))
+    #  ADLT <- ADLT[sample(1:nrow(ADLT), size = nrow(ADLT)-harvesting, replace = F),] 
       
-      }
+     # }
     sumStats <- rbind(sumStats, c(t,nrow(ADLT))) 
 }
     colnames(sumStats) <- c("year", "size")
@@ -60,7 +60,6 @@ colnames(ADLT) <- "patch"
 }
 
 ```
-
 #Dispersal Function to model dispersal in one patch in one year given
 parameters:
   
@@ -68,9 +67,55 @@ parameters:
 
 Output: Updated number of individuals in both patches, randomly modeled 
 ```{r Dispersal}
+randomly_drawn<-function(n,p){
+  return(sum(rbern(n,p)))
+}
 
+dispersal_even<-function(matrix1, matrix2, disp_prob1=0.1, disp_prob2=0.1, year, random=FALSE, ...){
+  last_row1<-tail(matrix1,n=1)
+  last_row2<-tail(matrix2,n=1)
+  
+  if(random){
+    d_1to2<-unlist(lapply(last_row1[,c("AA","AB","BB")],randomly_drawn,p=disp_prob1))
+    d_2to1<-unlist(lapply(last_row2[,c("AA","AB","BB")],randomly_drawn, p=disp_prob2))
+  }
+  else{  
+    d_1to2<-round(last_row1[,c("AA","AB","BB")]*disp_prob1)
+    d_2to1<-round(last_row2[,c("AA","AB","BB")]*disp_prob2)
+    }
+  
+  change_1<-c(d_2to1-d_1to2,sum(d_2to1)-sum(d_1to2))
+  change_2<-c(d_1to2-d_2to1,sum(d_1to2)-sum(d_2to1))
+  
+  new_row1<-matrix(data=c(last_row1+change_1),ncol = 4, dimnames = list(paste("Year_",year,sep=""),colnames(matrix1)))
+  new_row2<-matrix(data=c(last_row2+change_2),ncol = 4, dimnames = list(paste("Year_",year,sep=""),colnames(matrix1)))
+  return(list(row1=new_row1,row2=new_row2))
+}
+
+dispersal_pop_dependent<-function(matrix1, matrix2, parameter1, parameter2, year,random=FALSE, ...){
+  last_row1<-tail(matrix1,n=1)
+  last_row2<-tail(matrix2,n=1)
+  
+  disp_prob1<-parameter1$l_max-parameter1$l_max / (1 + parameter1$b * parameter2$wanderlust*last_row1[,"overall"])
+  disp_prob2<-parameter2$l_max-parameter1$l_max / (1 + parameter2$b * parameter2$wanderlust*last_row1[,"overall"])
+    
+  if(random){
+      d_1to2<-unlist(lapply(last_row1[,c("AA","AB","BB")],randomly_drawn,p=disp_prob1))
+      d_2to1<-unlist(lapply(last_row2[,c("AA","AB","BB")],randomly_drawn, p=disp_prob2))
+    }
+    else{  
+      d_1to2<-round(last_row1[,c("AA","AB","BB")]*disp_prob1)
+      d_2to1<-round(last_row2[,c("AA","AB","BB")]*disp_prob2)
+      }
+  
+  change_1<-c(d_2to1-d_1to2,sum(d_2to1)-sum(d_1to2))
+  change_2<-c(d_1to2-d_2to1,sum(d_1to2)-sum(d_2to1))
+  
+  new_row1<-matrix(data=c(last_row1+change_1),ncol = 4, dimnames = list(paste("Year_",year,sep=""),colnames(matrix1)))
+  new_row2<-matrix(data=c(last_row2+change_2),ncol = 4, dimnames = list(paste("Year_",year,sep=""),colnames(matrix1)))
+  return(list(row1=new_row1,row2=new_row2))
+}
 ```
-
 #Gamete Production Individual
 Model the gamete production of one individual. Parameters:
 
@@ -85,7 +130,6 @@ Output: a list/vector containing alleles eg.:c("A","A","A","A","A","B","B","B","
 ```{r Gamete Individual}
 
 ```
-
 #Gamete Production population: 
 models the gamete production of one entire population, produces list of gametes.Parameters:
 
@@ -130,6 +174,22 @@ Fusion<-function(gamete_vector=test_vector,N=test_N){
 }
 ```
 
+#Set-up
+initialize two lists, both containing a matrix, and a list of parameters
+N0 should be dividable by 4.
+
+```{r}
+para_patch1<-list(N0=360, b=0.001, l_max=1.4, wanderlust=1.1)
+para_patch2<-list(N0=40, b=0.001, l_max=1.4,wanderlust=0.7)
+
+matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+
+matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,para_patch2$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+
+Patch_1_list<-list(parameters=para_patch1, matrix=matrix_patch1)
+Patch_2_list<-list(parameters=para_patch1, matrix=matrix_patch2)
+```
+
 #Combined
 models, given a number of years, the number of individuals of different genotypes in each patch. Parameters:
 
@@ -138,7 +198,14 @@ table - a table to fill with data
 ...   - all parameters used in subsequent called functions
 ```{r Combined}
 
-
+for(i in 1:50){
+  disp_result<-dispersal_pop_dependent(Patch_1_list$matrix,Patch_2_list$matrix, Patch_1_list$parameters, Patch_2_list$parameters, year=i, random=TRUE)
+  Patch_1_list$matrix<-rbind(Patch_1_list$matrix,disp_result$row1)
+  Patch_2_list$matrix<-rbind(Patch_2_list$matrix,disp_result$row2)
+  
+}
+View(Patch_2_list$matrix)
+View(Patch_1_list$matrix)
 ```
 - Es gibt nur einen Patch, bei dem überhaupt gejagt wird/die Population kurzzeitig stark eingeschränkt sein kann.
 - Unterschiedlich große Patches
