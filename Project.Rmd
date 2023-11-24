@@ -8,6 +8,8 @@ Installation and Package loading
 
 ```{r}
 library("ggplot2")
+library('dplyr')
+library('Rlab')
 ```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or
@@ -65,15 +67,23 @@ parameters:
   
   disp_prob - probability to change the patch
 
-Output: Updated number of individuals in both patches, randomly modeled 
+Output: two matrices of one row, both showing the 
 ```{r Dispersal}
 randomly_drawn<-function(n,p){
   return(sum(rbern(n,p)))
 }
 
-dispersal_even<-function(matrix1, matrix2, disp_prob1=0.1, disp_prob2=0.1, year, random=FALSE, ...){
+dispersal<-function(matrix1, matrix2, parameter1,parameter2, year, random=FALSE, method="default", ...){
   last_row1<-tail(matrix1,n=1)
   last_row2<-tail(matrix2,n=1)
+  
+  disp_prob1<-case_when(method=="even" ~ parameter1$dispersal_prob,
+                        method=="population_dependent" ~ parameter1$l_max-parameter1$l_max / (1 + parameter1$b * parameter1$wanderlust*last_row1[,"overall"]),
+                        TRUE ~ 0.1)
+  
+  disp_prob2<-case_when(method=="even" ~ parameter2$dispersal_prob,
+                        method=="population_dependent" ~ parameter2$l_max-parameter2$l_max / (1 + parameter2$b * parameter2$wanderlust*last_row1[,"overall"]),
+                        TRUE ~ 0.1)
   
   if(random){
     d_1to2<-unlist(lapply(last_row1[,c("AA","AB","BB")],randomly_drawn,p=disp_prob1))
@@ -83,30 +93,6 @@ dispersal_even<-function(matrix1, matrix2, disp_prob1=0.1, disp_prob2=0.1, year,
     d_1to2<-round(last_row1[,c("AA","AB","BB")]*disp_prob1)
     d_2to1<-round(last_row2[,c("AA","AB","BB")]*disp_prob2)
     }
-  
-  change_1<-c(d_2to1-d_1to2,sum(d_2to1)-sum(d_1to2))
-  change_2<-c(d_1to2-d_2to1,sum(d_1to2)-sum(d_2to1))
-  
-  new_row1<-matrix(data=c(last_row1+change_1),ncol = 4, dimnames = list(paste("Year_",year,sep=""),colnames(matrix1)))
-  new_row2<-matrix(data=c(last_row2+change_2),ncol = 4, dimnames = list(paste("Year_",year,sep=""),colnames(matrix1)))
-  return(list(row1=new_row1,row2=new_row2))
-}
-
-dispersal_pop_dependent<-function(matrix1, matrix2, parameter1, parameter2, year,random=FALSE, ...){
-  last_row1<-tail(matrix1,n=1)
-  last_row2<-tail(matrix2,n=1)
-  
-  disp_prob1<-parameter1$l_max-parameter1$l_max / (1 + parameter1$b * parameter2$wanderlust*last_row1[,"overall"])
-  disp_prob2<-parameter2$l_max-parameter1$l_max / (1 + parameter2$b * parameter2$wanderlust*last_row1[,"overall"])
-    
-  if(random){
-      d_1to2<-unlist(lapply(last_row1[,c("AA","AB","BB")],randomly_drawn,p=disp_prob1))
-      d_2to1<-unlist(lapply(last_row2[,c("AA","AB","BB")],randomly_drawn, p=disp_prob2))
-    }
-    else{  
-      d_1to2<-round(last_row1[,c("AA","AB","BB")]*disp_prob1)
-      d_2to1<-round(last_row2[,c("AA","AB","BB")]*disp_prob2)
-      }
   
   change_1<-c(d_2to1-d_1to2,sum(d_2to1)-sum(d_1to2))
   change_2<-c(d_1to2-d_2to1,sum(d_1to2)-sum(d_2to1))
@@ -138,7 +124,22 @@ Genotypes - a ratio, than in combination with number of indiviuals, or a count f
 
 Output: an aggregated list/vector of all Gametes
 ```{r Gamete Population}
-
+gamete_production<-function(matrix, parameters, year,N_new, method="default", ...){
+unfavored<-ifelse(parameters$favored=="AA", "BB","AA")
+favored<-parameters$favored
+prob_unfavored<-(1-parameters$s)
+prob_heterozygen<-(1-parameters$h*parameters$s)
+prob_favored<-1
+fmax<-N_new/prob_unfavored
+favored_mult<-ceiling(matrix[,favored]*prob_favored)
+unfavored_mult<-ceiling(matrix[,unfavored]*prob_unfavored)
+heterozygen_mult<-ceiling(matrix[,"AB"]*prob_heterozygen)
+gamete_vector<-rep(substr(favored,1,1),times=(2*favored_mult))
+gamete_vector<-c(gamete_vector,rep(substr(unfavored,1,1),times=(2*unfavored_mult)))
+gamete_vector<-c(gamete_vector,rep("A",heterozygen_mult),rep("B",heterozygen_mult))
+print(fmax)
+return(gamete_vector)
+}
 ```
 #Fusion
 models the fusion of gametes in one patch. Parameters:
@@ -179,8 +180,16 @@ initialize two lists, both containing a matrix, and a list of parameters
 N0 should be dividable by 4.
 
 ```{r}
-para_patch1<-list(N0=360, b=0.001, l_max=1.4, wanderlust=1.1)
-para_patch2<-list(N0=40, b=0.001, l_max=1.4,wanderlust=0.7)
+#Set values for selection_coefficient, heterozygote_coefficient, if they are symmetrical
+selection_coefficient <- 0.8
+heterozygote_coefficient <-0.4
+
+para_patch1<-list(N0=360, b=0.001, l_max=1.4, 
+                  wanderlust=1.1, dispersal_prob=0.2,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
+para_patch2<-list(N0=40, b=0.001, l_max=1.4,
+                  wanderlust=0.7, dispersal_prob=0.1,
+                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
 
 matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
 
@@ -199,7 +208,7 @@ table - a table to fill with data
 ```{r Combined}
 
 for(i in 1:50){
-  disp_result<-dispersal_pop_dependent(Patch_1_list$matrix,Patch_2_list$matrix, Patch_1_list$parameters, Patch_2_list$parameters, year=i, random=TRUE)
+  disp_result<-dispersal(Patch_1_list$matrix,Patch_2_list$matrix, Patch_1_list$parameters, Patch_2_list$parameters, year=i,method="even", random=TRUE)
   Patch_1_list$matrix<-rbind(Patch_1_list$matrix,disp_result$row1)
   Patch_2_list$matrix<-rbind(Patch_2_list$matrix,disp_result$row2)
   
