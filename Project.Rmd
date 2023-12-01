@@ -177,11 +177,11 @@ table - a table to fill with data
 selection_coefficient <- 0
 heterozygote_coefficient <-0
 
-para_patch1<-list(N0=500, b=0.001, l_max=1.4, 
+para_patch1<-list(N0=400, b=0.001, l_max=1.4, 
                   wanderlust=1, dispersal_prob=0.15,
                   favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
 
-para_patch2<-list(N0=500, b=0.001, l_max=1.4,
+para_patch2<-list(N0=400, b=0.001, l_max=1.4,
                   wanderlust=1, dispersal_prob=0.15,
                   favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
 
@@ -191,22 +191,38 @@ matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,
 
 Patch_1_list<-list(parameters=para_patch1, matrix=matrix_patch1)
 Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
+```
 
-matrix(c("AA","AB","BB","overall"))
-for(k in 1:10){
+```{R}
+set.seed(11)
+#Minimal example, two Patches, no advantages for either genotype, 200 years, 400 individuals is the stable max population, no dispersal, how does the amount of individuals with different genotypes change? 
+
+selection_coefficient <- 0
+heterozygote_coefficient <-0
+
+para_patch1<-list(N0=400, b=0.001, l_max=1.4, 
+                  wanderlust=1, dispersal_prob=0.15,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
+
+para_patch2<-list(N0=400, b=0.001, l_max=1.4,
+                  wanderlust=1, dispersal_prob=0.15,
+                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
+
+Big_Patches<-matrix(nrow=201)
+for (i in 1:5){
+  matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+
+  matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,para_patch2$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+  
+  Patch_1_list<-list(parameters=para_patch1, matrix=matrix_patch1)
+  Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
+
   for(i in 1:200){
     N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)
     N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
     
-    disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_2_list$parameters, year=i,method="population_dependent", random=TRUE)
-    
-    if(i>200){
-    gamete_vector1<-gamete_production(disp_result$row1,Patch_1_list$parameters, N1_new)
-    gamete_vector2<-gamete_production(disp_result$row2,Patch_2_list$parameters, N2_new)
-    }else{
     gamete_vector1<-gamete_production(tail(Patch_1_list$matrix,1),Patch_1_list$parameters, N1_new)
     gamete_vector2<-gamete_production(tail(Patch_2_list$matrix,1),Patch_2_list$parameters, N2_new)
-    }
     
     result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
     
@@ -216,10 +232,201 @@ for(k in 1:10){
     Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
     
   }
+  Big_Patches<-cbind(Big_Patches,Patch_1_list$matrix,Patch_2_list$matrix)
+}
+#}
+
+```
+
+```{r Visualization Baseline}
+#In General, in this population size, genotypes are not safe from extinction due to random chance-see .7 in the resulting patches, where  BB frequently drops to 0, and AB is mostly in the low double digits later on.
+plot(Big_Patches[,"overall"], col="black", lty=1, lwd=1, las=1, type="l", pch=16, xlab="time", ylab="population size (N)", ylim=c(0,500)) # 
+colors<-c("red","purple","blue","black")
+for (i in 2:dim(Big_Patches)[2]){
+  which_type<-str_detect(colnames(Big_Patches)[i],c("AA","AB","BB","overall"))
+  lines(Big_Patches[,i], lty=1, col=colors[which_type], lwd=1)
+  }
+
+```
+```{r}
+set.seed(25)
+#Low selection coefficient, low chance of dispersal, 300years, max population of 500, same circumstances in both patches. To improve time-performance, gamete production does not use random draws, but prob*Gametes
+
+selection_coefficient <- 0.05
+heterozygote_coefficient <-0.5
+
+para_patch1<-list(N0=200, b=0.001, l_max=1.5, 
+                  wanderlust=1, dispersal_prob=0.05,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
+
+para_patch2<-list(N0=200, b=0.001, l_max=1.5,
+                  wanderlust=1, dispersal_prob=0.05,
+                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
+
+
+
+Small_changes_1<-matrix(nrow=501)
+Small_changes_2<-matrix(nrow=501)
+
+for(i in 1:15){
+  matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+
+matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,para_patch2$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+
+Patch_1_list<-list(parameters=para_patch1, matrix=matrix_patch1)
+Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
+
+  for(i in 1:500){
+    N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)
+    N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
+    
+    disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_2_list$parameters, year=i,method="even")
+    
+    gamete_vector1<-gamete_production(disp_result$row1,Patch_1_list$parameters, N1_new)
+    gamete_vector2<-gamete_production(disp_result$row2,Patch_2_list$parameters, N2_new)
+    
+    result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+    
+    result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+    
+    Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
+    Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
+    
+  }
+  Small_changes_1<-cbind(Small_changes_1,Patch_1_list$matrix)
+  Small_changes_2<-cbind(Small_changes_2,Patch_2_list$matrix)
+
 }
 
 ```
-- Es gibt nur einen Patch, bei dem überhaupt gejagt wird/die Population kurzzeitig stark eingeschränkt sein kann.
+
+```{r Visualization small Advantages, small Dispersal}
+#Population and time were somewhat increased, looking at the number of AA(favored), and AB(97.5% as favored) genotypes, to see whether this shows a significant change over 10 experiments and 300years
+plot(Small_changes_1[,"AA"], col=alpha("red",0.2), lty=1, lwd=1, las=1, type="l", pch=16, xlab="time", ylab="population size (N)", ylim=c(0,450)) # 
+colors<-c("red","violet","blue","black")
+for (i in 2:dim(Small_changes_1)[2]){
+  which_type<-str_detect(colnames(Small_changes_1)[i],c("AA","AB","BB","overall"))
+  if (which_type[1]||which_type[2]){
+    lines(Small_changes_1[,i], lty=1, col=alpha(colors[which_type],0.2), lwd=1)
+    }
+}
+mean_AA_1<-apply(Small_changes_1[,str_detect(colnames(Small_changes_1),"AA")],1, mean)
+lines(mean_AA_1,col="darkred",lwd=2,lty=3)
+mean_AB_1<-apply(Small_changes_1[,str_detect(colnames(Small_changes_1),"AB")],1, mean)
+lines(mean_AB_2,col="darkviolet",lwd=2,lty=3)
+
+```
+```{r Visualization small Advantages, small Dispersal}
+#Population and time were somewhat increased, looking at the number of BB(favored), and AB(97.5% as favored) genotypes, to see whether this shows a significant change over 10 experiments and 300years
+plot(Small_changes_2[,"BB"], col=alpha("blue",0.2), lty=1, lwd=1, las=1, type="l", pch=16, xlab="time", ylab="population size (N)", ylim=c(0,450)) # 
+colors<-c("red","violet","blue","black")
+for (i in 2:dim(Small_changes_2)[2]){
+  which_type<-str_detect(colnames(Small_changes_2)[i],c("AA","AB","BB","overall"))
+  if (which_type[3]||which_type[2]){
+    lines(Small_changes_2[,i], lty=1, col=alpha(colors[which_type],0.2), lwd=1)
+    }
+}
+mean_BB_2<-apply(Small_changes_2[,str_detect(colnames(Small_changes_2),"BB")],1, mean)
+lines(mean_BB_2,col="darkblue",lwd=2,lty=3)
+mean_AB_2<-apply(Small_changes_2[,str_detect(colnames(Small_changes_2),"AB")],1, mean)
+lines(mean_AB_2,col="darkviolet",lwd=2,lty=3)
+
+```
+Looking at these values, it seems that with a small enough selection coefficient, like 5% here, random chance will be in a lot of cases more influential than adaption, as we barely see any trend in one direction or the other.  A random (series of) event(s) that may influence the frequency of genotypes seems to weight stronger than the adaptation. 
+
+```{r 220min}
+set.seed(33)
+#Low selection coefficient, low chance of dispersal, 300years, max population of 500, same circumstances in both patches. To improve time-performance, gamete production does not use random draws, but prob*Gametes
+runs<-300
+list_of_matrices_1<-list()
+list_of_matrices_2<-list()
+
+heterozygote_coefficient <-0.5
+selection_coefficients<-seq(0,8)/20
+disperal_probs<-seq(1,5)/20
+
+for(sc in selection_coefficients){
+  for (d in disperal_probs){
+    para_patch1<-list(N0=200, b=0.001, l_max=1.5, 
+                      wanderlust=1, dispersal_prob=d,
+                      favored="AA", s=sc,h=heterozygote_coefficient)
+    
+    para_patch2<-list(N0=200, b=0.001, l_max=1.5,
+                      wanderlust=1, dispersal_prob=d,
+                      favored="BB", s=sc,h=heterozygote_coefficient)
+    
+    
+    Patch_1<-matrix(nrow=runs+1)
+    Patch_2<-matrix(nrow=runs+1)
+  
+    
+    for(i in 1:10){
+      Name1<-paste("P1_d=",d,"_sc=",sc,"_run=",i,sep="")
+      Name2<-paste("P2_d=",d,"_sc=",sc,"_run=",i,sep="")
+      colnames<-c("AA","AB","BB","overall")
+      print(Name1)
+      
+      matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),colnames))
+    
+    matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,para_patch2$N0),ncol=4,dimnames = list(c("Year_0"),colnames))
+    
+    Patch_1_list<-list(parameters=para_patch1, matrix=matrix_patch1)
+    Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
+    
+      for(r in 1:runs){
+        N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)
+        N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
+        
+        disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_2_list$parameters, year=i,method="even")
+        
+        gamete_vector1<-gamete_production(disp_result$row1,Patch_1_list$parameters, N1_new)
+        gamete_vector2<-gamete_production(disp_result$row2,Patch_2_list$parameters, N2_new)
+        
+        result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),colnames))
+        
+        result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),colnames))
+        
+        Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
+        Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
+        
+      }
+      Patch_1<-cbind(Patch_1,Patch_1_list$matrix)
+      Patch_2<-cbind(Patch_2,Patch_2_list$matrix)
+  
+    }
+    #assign(Name1,Patch_1)
+    #assign(Name2,Patch_2)
+    list_of_matrices_1[[Name1]]<-Patch_1
+    list_of_matrices_2[[Name2]]<-Patch_2
+    
+  }
+}  
+```
+```{r Plotting}
+runs<-300
+one_big_dataframe<-matrix(ncol=8,dimnames = list("",c("AA","AB","BB","overall","dispersal_probability","selection_coefficient","run","Year")))
+
+for (name in names(list_of_matrices_1)){
+  d_num<-str_extract(name,"(?<=d=)[:digit:][:punct:][:digit:]")
+  sc_num<-str_extract(name,"(?<=sc=)[:digit:][:punct:][:digit:]")
+  
+  
+  for (r in 1:10){
+    list_of_matrices_1[[name]]
+  }
+    new_cols<-matrix(data=c(rep(d_num,runs+1),rep(sc_num,runs+1), rep(run_num,runs+1),seq(0:runs-1)),ncol=4,nrow=runs+1,byrow=FALSE,dimnames =   list(paste("Year_",seq(0,300,1)),c("dispersal_probability","selection_coefficient","run","Year")))
+  one_big_dataframe<-rbind(one_big_dataframe, cbind(d,new_cols))
+}
+```
+
+```{r}
+ggplot(one_big_dataframe)+
+  geom_line(aes(x=Year,y=AA, color=as.factor(run)))+
+  facet_grid(vars(dispersal_probability), vars(selection_coefficient))+
+  scale_color_manual(values=rep(alpha("red",0.2),10))+geom_line(data=one_big_dataframe%>%group_by(interaction(dispersal_probability,selection_coefficient))%>%summarise(mean_AA=mean(AA)), mapping = aes(x = Year, x = mean_AA), color = 'darkred')
+```
+
+#- Es gibt nur einen Patch, bei dem überhaupt gejagt wird/die Population kurzzeitig stark eingeschränkt sein kann.
 
 - Unterschiedlich große Patches (l_max kleiner,)
 
