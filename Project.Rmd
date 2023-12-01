@@ -407,7 +407,7 @@ runs<-300
 one_big_dataframe<-matrix(ncol=8,dimnames = list("",c("AA","AB","BB","overall","dispersal_probability","selection_coefficient","run","Year")))
 
 for (name in names(list_of_matrices_1)){
-  d_num<-str_extract(name,"(?<=d=)[:digit:][:punct:][:digit:]")
+  d_num<-str_extract(name,"(?<=d=)[:digit:][:punct:][:digit:]+")
   sc_num<-str_extract(name,"(?<=sc=)[:digit:][:punct:]*[:digit:]+")
   if (is.na(sc_num)){
     sc_num<-0
@@ -425,13 +425,42 @@ for (name in names(list_of_matrices_1)){
   }
     
 }
+
 ```
 
+
 ```{r}
-ggplot(one_big_dataframe)+
-  geom_line(aes(x=Year,y=AA, color=as.factor(run)))+
-  facet_grid(vars(dispersal_probability), vars(selection_coefficient))+
-  scale_color_manual(values=rep(alpha("red",0.2),10))+geom_line(data=one_big_dataframe%>%group_by(interaction(dispersal_probability,selection_coefficient))%>%summarise(mean_AA=mean(AA)), mapping = aes(x = Year, x = mean_AA), color = 'darkred')
+one_big_dataframe_1<-one_big_dataframe[-1,]
+write.table(one_big_dataframe_1,file="Parameter_Space_Exploration_Patch1.txt",col.names = TRUE,row.names = FALSE)
+```
+
+ggplot
+```{r}
+#Reduced_subset_Patch1_ParaExplo<-subset(one_big_dataframe_1, subset = one_big_dataframe_1[,6]%in% c(0,0.1,0.2,0.3,0.4))
+#Reduced_subset_Patch1_ParaExplo<-subset(Reduced_subset_Patch1_ParaExplo, subset=Reduced_subset_Patch1_ParaExplo[,5]%in% c(0.05,0.15,0.25)) %>% data.frame()
+ggplot(Reduced_subset_Patch1_ParaExplo,aes(x=Year,y=AA, col=run, group=run))+
+  facet_grid(vars(selection_coefficient),vars(dispersal_probability))+
+  coord_cartesian(xlim = c(0, 301),ylim = c(0,500))+
+
+    geom_line()#+
+  #scale_color_manual(values=rep(alpha("red",0.2),10))#+
+  #geom_point(data=one_big_dataframe%>%group_by(interaction(dispersal_probability,selection_coefficient))%>%summarise(mean_AA=mean(AA)), mapping = aes(x = Year, x = mean_AA), color = 'darkred')
+```
+```{r}
+to_plot<-list_of_matrices_1$`P1_d=0.15_sc=0_run=10`
+plot(to_plot[,"AA"], col=alpha("red",0.2), lty=1, lwd=1, las=1, type="l", pch=16, xlab="time", ylab="population size (N)", ylim=c(0,450)) # 
+colors<-c("red","violet","blue","black")
+for (i in 2:dim(to_plot)[2]){
+  which_type<-str_detect(colnames(to_plot)[i],c("AA","AB","BB","overall"))
+  if (which_type[1]||which_type[2]){
+    lines(to_plot[,i], lty=1, col=alpha(colors[which_type],0.2), lwd=1)
+    }
+}
+mean_AA_1<-apply(to_plot[,str_detect(colnames(to_plot),"AA")],1, mean)
+lines(mean_AA_1,col="darkred",lwd=2,lty=3)
+mean_AB_1<-apply(to_plot[,str_detect(colnames(to_plot),"AB")],1, mean)
+lines(mean_AB_2,col="darkviolet",lwd=2,lty=3)
+
 ```
 
 #- Es gibt nur einen Patch, bei dem überhaupt gejagt wird/die Population kurzzeitig stark eingeschränkt sein kann.
