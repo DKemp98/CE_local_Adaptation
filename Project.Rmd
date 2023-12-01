@@ -408,14 +408,22 @@ one_big_dataframe<-matrix(ncol=8,dimnames = list("",c("AA","AB","BB","overall","
 
 for (name in names(list_of_matrices_1)){
   d_num<-str_extract(name,"(?<=d=)[:digit:][:punct:][:digit:]")
-  sc_num<-str_extract(name,"(?<=sc=)[:digit:][:punct:][:digit:]")
+  sc_num<-str_extract(name,"(?<=sc=)[:digit:][:punct:]*[:digit:]+")
+  if (is.na(sc_num)){
+    sc_num<-0
+  }
   
   
   for (r in 1:10){
-    list_of_matrices_1[[name]]
+  
+    low_indice<-r*4-2
+    high_indice<-r*4+1
+    subset_big_table<-list_of_matrices_1[[name]][,low_indice:high_indice] 
+    
+    new_cols<-matrix(data=c(rep(d_num,runs+1),rep(sc_num,runs+1), rep(r,runs+1),seq(0:runs-1)),ncol=4,nrow=runs+1,byrow=FALSE,dimnames =   list(seq(1:301),c("dispersal_probability","selection_coefficient","run","Year")))
+  one_big_dataframe<-rbind(one_big_dataframe, cbind(subset_big_table,new_cols))
   }
-    new_cols<-matrix(data=c(rep(d_num,runs+1),rep(sc_num,runs+1), rep(run_num,runs+1),seq(0:runs-1)),ncol=4,nrow=runs+1,byrow=FALSE,dimnames =   list(paste("Year_",seq(0,300,1)),c("dispersal_probability","selection_coefficient","run","Year")))
-  one_big_dataframe<-rbind(one_big_dataframe, cbind(d,new_cols))
+    
 }
 ```
 
