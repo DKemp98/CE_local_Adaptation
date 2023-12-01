@@ -33,31 +33,13 @@ Output:
 
 ```{r Population Change}
 
-  Population <- function(N0=10, b=0.001, l_max=1.4, years=50) {
-  ADLT           <- matrix(1, ncol=1, nrow=N0)     
-  
-colnames(ADLT) <- "patch"                        
-  sumStats      <- NULL                            
-  sumStats      <- rbind(sumStats, c(0,N0))        
-  
-  for(t in 1:years){
-    
-    N       <- nrow(ADLT)                           
-    Fec     <- l_max / (1 + b * N)                      
-    indFec  <- rpois(n=N, lambda=Fec)               
-    OFF     <- matrix(1, ncol=1, nrow= sum(indFec)) 
-    colnames(OFF) <- "patch"                        
-    ADLT     <- OFF  
-    
-  #if (t >= quota_T) {
-   #   harvesting <- min(quota_N, nrow(ADLT))
-    #  ADLT <- ADLT[sample(1:nrow(ADLT), size = nrow(ADLT)-harvesting, replace = F),] 
-      
-     # }
-    sumStats <- rbind(sumStats, c(t,nrow(ADLT))) 
-}
-    colnames(sumStats) <- c("year", "size")
-  return(sumStats)
+population_change <- function(matrix,parameters, ...) {
+  #N0=10, b=0.001, l_max=1.4,
+    N<-tail(matrix[,"overall"],1)
+    Fec     <- parameters$l_max / (1 + parameters$b *N )            
+    indFec  <- rpois(n=N, lambda=Fec) 
+    new_Generation<-N*mean(indFec)
+  return(new_Generation)
 
 }
 
@@ -67,13 +49,13 @@ parameters:
   
   disp_prob - probability to change the patch
 
-Output: two matrices of one row, both showing the 
+Output: two matrices of one row, both showing the new population
 ```{r Dispersal}
 randomly_drawn<-function(n,p){
   return(sum(rbern(n,p)))
 }
 
-dispersal<-function(matrix1, matrix2, parameter1,parameter2, year, random=FALSE, method="default", ...){
+dispersal<-function(matrix1, matrix2, parameter1,parameter2, year, random=FALSE, method="default",  ...){
   last_row1<-tail(matrix1,n=1)
   last_row2<-tail(matrix2,n=1)
   
@@ -82,7 +64,7 @@ dispersal<-function(matrix1, matrix2, parameter1,parameter2, year, random=FALSE,
                         TRUE ~ 0.1)
   
   disp_prob2<-case_when(method=="even" ~ parameter2$dispersal_prob,
-                        method=="population_dependent" ~ parameter2$l_max-parameter2$l_max / (1 + parameter2$b * parameter2$wanderlust*last_row1[,"overall"]),
+                        method=="population_dependent" ~ parameter2$l_max-parameter2$l_max / (1 + parameter2$b * parameter2$wanderlust*last_row2[,"overall"]),
                         TRUE ~ 0.1)
   
   if(random){
@@ -98,6 +80,7 @@ dispersal<-function(matrix1, matrix2, parameter1,parameter2, year, random=FALSE,
   change_2<-c(d_1to2-d_2to1,sum(d_1to2)-sum(d_2to1))
   
   new_row1<-matrix(data=c(last_row1+change_1),ncol = 4, dimnames = list(paste("Year_",year,sep=""),colnames(matrix1)))
+  
   new_row2<-matrix(data=c(last_row2+change_2),ncol = 4, dimnames = list(paste("Year_",year,sep=""),colnames(matrix1)))
   return(list(row1=new_row1,row2=new_row2))
 }
@@ -112,10 +95,6 @@ f_max - how many gametes the individual would produce under optimal circumstance
 h     - dominance coefficient, default set to 0.5
 s     - selection coefficient
 
-Output: a list/vector containing alleles eg.:c("A","A","A","A","A","B","B","B","B","B")
-```{r Gamete Individual}
-
-```
 #Gamete Production population: 
 models the gamete production of one entire population, produces list of gametes.Parameters:
 
@@ -124,23 +103,31 @@ Genotypes - a ratio, than in combination with number of indiviuals, or a count f
 
 Output: an aggregated list/vector of all Gametes
 ```{r Gamete Population}
-gamete_production<-function(matrix, parameters, year,N_new, method="default", ...){
+gamete_production<-function(matrix, parameters,N_new, method="default", ...){
+
 unfavored<-ifelse(parameters$favored=="AA", "BB","AA")
 favored<-parameters$favored
+
 prob_unfavored<-(1-parameters$s)
 prob_heterozygen<-(1-parameters$h*parameters$s)
 prob_favored<-1
-fmax<-N_new/prob_unfavored
-favored_mult<-ceiling(matrix[,favored]*prob_favored)
-unfavored_mult<-ceiling(matrix[,unfavored]*prob_unfavored)
-heterozygen_mult<-ceiling(matrix[,"AB"]*prob_heterozygen)
-gamete_vector<-rep(substr(favored,1,1),times=(2*favored_mult))
-gamete_vector<-c(gamete_vector,rep(substr(unfavored,1,1),times=(2*unfavored_mult)))
+
+ifelse(parameters$s>=1,
+       fmax<-N_new/prob_heterozygen,
+       fmax<-N_new/prob_unfavored
+)
+favored_mult<-ceiling(2*matrix[,favored]*prob_favored*fmax)
+unfavored_mult<-ceiling(2*matrix[,unfavored]*prob_unfavored*fmax)
+heterozygen_mult<-ceiling(matrix[,"AB"]*prob_heterozygen*fmax)
+
+
+gamete_vector<-rep(substr(favored,1,1),favored_mult)
+gamete_vector<-c(gamete_vector,rep(substr(unfavored,1,1),unfavored_mult))
 gamete_vector<-c(gamete_vector,rep("A",heterozygen_mult),rep("B",heterozygen_mult))
-print(fmax)
 return(gamete_vector)
 }
 ```
+
 #Fusion
 models the fusion of gametes in one patch. Parameters:
 
@@ -171,24 +158,31 @@ Fusion<-function(gamete_vector=test_vector,N=test_N){
                   B<-B+1),
            M<-M+1)
   }
-  return(c(A,B,M))
+  return(c(A,M,B,A+B+M))
 }
 ```
 
 #Set-up
 initialize two lists, both containing a matrix, and a list of parameters
 N0 should be dividable by 4.
+#Combined
+models, given a number of years, the number of individuals of different genotypes in each patch. Parameters:
+
+years - number of years to model
+table - a table to fill with data
+...   - all parameters used in subsequent called functions
 
 ```{r}
 #Set values for selection_coefficient, heterozygote_coefficient, if they are symmetrical
-selection_coefficient <- 0.8
-heterozygote_coefficient <-0.4
+selection_coefficient <- 0
+heterozygote_coefficient <-0
 
-para_patch1<-list(N0=360, b=0.001, l_max=1.4, 
-                  wanderlust=1.1, dispersal_prob=0.2,
+para_patch1<-list(N0=500, b=0.001, l_max=1.4, 
+                  wanderlust=1, dispersal_prob=0.15,
                   favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
-para_patch2<-list(N0=40, b=0.001, l_max=1.4,
-                  wanderlust=0.7, dispersal_prob=0.1,
+
+para_patch2<-list(N0=500, b=0.001, l_max=1.4,
+                  wanderlust=1, dispersal_prob=0.15,
                   favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
 
 matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
@@ -196,28 +190,44 @@ matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,
 matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,para_patch2$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
 
 Patch_1_list<-list(parameters=para_patch1, matrix=matrix_patch1)
-Patch_2_list<-list(parameters=para_patch1, matrix=matrix_patch2)
-```
+Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
 
-#Combined
-models, given a number of years, the number of individuals of different genotypes in each patch. Parameters:
-
-years - number of years to model
-table - a table to fill with data
-...   - all parameters used in subsequent called functions
-```{r Combined}
-
-for(i in 1:50){
-  disp_result<-dispersal(Patch_1_list$matrix,Patch_2_list$matrix, Patch_1_list$parameters, Patch_2_list$parameters, year=i,method="even", random=TRUE)
-  Patch_1_list$matrix<-rbind(Patch_1_list$matrix,disp_result$row1)
-  Patch_2_list$matrix<-rbind(Patch_2_list$matrix,disp_result$row2)
-  
+matrix(c("AA","AB","BB","overall"))
+for(k in 1:10){
+  for(i in 1:200){
+    N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)
+    N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
+    
+    disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_2_list$parameters, year=i,method="population_dependent", random=TRUE)
+    
+    if(i>200){
+    gamete_vector1<-gamete_production(disp_result$row1,Patch_1_list$parameters, N1_new)
+    gamete_vector2<-gamete_production(disp_result$row2,Patch_2_list$parameters, N2_new)
+    }else{
+    gamete_vector1<-gamete_production(tail(Patch_1_list$matrix,1),Patch_1_list$parameters, N1_new)
+    gamete_vector2<-gamete_production(tail(Patch_2_list$matrix,1),Patch_2_list$parameters, N2_new)
+    }
+    
+    result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+    
+    result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+    
+    Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
+    Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
+    
+  }
 }
-View(Patch_2_list$matrix)
-View(Patch_1_list$matrix)
+
 ```
 - Es gibt nur einen Patch, bei dem überhaupt gejagt wird/die Population kurzzeitig stark eingeschränkt sein kann.
-- Unterschiedlich große Patches
+
+- Unterschiedlich große Patches (l_max kleiner,)
+
+- unterschiedliche starke Selection in den Patches
+       
 - Dispersion von Individuen, bevor die Anzahl auf N1/N2 getrimmt wird.
+
+-Dispersal beginnt erst später 
+
 - Variable Parameter für Populationsentwicklung 
 - Dispersion rate könnte von Gesamtmenge im Patch abhängen
