@@ -10,6 +10,7 @@ Installation and Package loading
 library("ggplot2")
 library('dplyr')
 library('Rlab')
+library('stringr')
 ```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or
@@ -432,6 +433,8 @@ for (name in names(list_of_matrices_1)){
 ```{r}
 one_big_dataframe_1<-one_big_dataframe[-1,]
 write.table(one_big_dataframe_1,file="Parameter_Space_Exploration_Patch1.txt",col.names = TRUE,row.names = FALSE)
+one_big_dataframe_2<-one_big_dataframe[-1,]
+write.table(one_big_dataframe_2,file="Parameter_Space_Exploration_Patch2.txt",col.names = TRUE,row.names = FALSE)
 ```
 
 ggplot
@@ -445,13 +448,21 @@ ggplot(Reduced_subset_Patch1_ParaExplo,aes(x=Year,y=AA, col=run, group=run))+
   scale_color_manual(values=rep(alpha("red",0.2),10))#+
   #geom_point(data=one_big_dataframe%>%group_by(interaction(dispersal_probability,selection_coefficient))%>%summarise(mean_AA=mean(AA)), mapping = aes(x = Year, x = mean_AA), color = 'darkred')
 ```
-```{r plot fig.width=11,fig.height=9}
-par(mfcol=c(5,9),cex=0.7, mai=c(0.1,0.1,0.1,0.1))
+
+```{r fig.height=7, fig.width=14}
+#Plotting an overview of the whole parameter space, for Patch 1.
+#par(mfcol=c(5,9),
+par(cex=0.7, mai=c(0.06,0.06,0.06,0.06), oma=c(5,1,3,0))
+layout(matrix(c(1:45), nrow = 5, byrow = FALSE))
+colors<-c("red","violet","blue","black")
+
 for (name in names(list_of_matrices_2)){
   to_plot<-list_of_matrices_2[[name]]
-  plot(to_plot[,"BB"], col=alpha("red",0.2), lty=1, lwd=1, las=1, type="l", pch=16, xlab="time", ylab="population size (N)", ylim=c(0,550),
-     axes = FALSE) # 
-  colors<-c("red","violet","blue","black")
+  
+  plot(to_plot[,"BB"], col=alpha("blue",0.2), lty=1, lwd=1, las=1, type="l", pch=16,ylim=c(0,550), axes=FALSE)
+  
+  axis(1, at=c(0,100,200,300), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
   for (i in 2:dim(to_plot)[2]){
     which_type<-str_detect(colnames(to_plot)[i],c("AA","AB","BB","overall"))
     if (which_type[3]||which_type[2]||which_type[1]){
@@ -467,7 +478,19 @@ for (name in names(list_of_matrices_2)){
   mean_overall<-apply(to_plot[,str_detect(colnames(to_plot),"overall")],1, mean)
   lines(mean_overall,col="black",lwd=2,lty=3)
 }
+mtext("BB-favored Patch, frequency of genotypes",side=3,cex=1.2,outer=TRUE) 
+mtext("selection coefficient:0.00                    0.05                                     0.10                                         0.15                                         0.20                                         0.25                                         0.30                                         0.35                                         0.40",                   
+      side = 3,
+      line= -1,
+      cex=0.8,
+      outer = TRUE)
+mtext("   dispersal prob.: 0.25                           0.20                            0.15                            0.10                             0.05                     ",
+      side=2, 
+      line=0,
+      cex=0.8,
+      outer=TRUE )
 ```
+
 
 #- Es gibt nur einen Patch, bei dem überhaupt gejagt wird/die Population kurzzeitig stark eingeschränkt sein kann.
 
