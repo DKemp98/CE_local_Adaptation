@@ -112,15 +112,10 @@ prob_unfavored<-(1-parameters$s)
 prob_heterozygen<-(1-parameters$h*parameters$s)
 prob_favored<-1
 
-#ifelse(parameters$s>=1,
-#       fmax<-N_new/prob_heterozygen,
-#       fmax<-N_new/prob_unfavored
-#)
 fmax<-20
 favored_mult<-ceiling(2*matrix[,favored]*prob_favored*fmax)
 unfavored_mult<-ceiling(2*matrix[,unfavored]*prob_unfavored*fmax)
 heterozygen_mult<-ceiling(matrix[,"AB"]*prob_heterozygen*fmax)
-
 
 gamete_vector<-rep(substr(favored,1,1),favored_mult)
 gamete_vector<-c(gamete_vector,rep(substr(unfavored,1,1),unfavored_mult))
@@ -451,8 +446,8 @@ for (name in names(list_of_matrices_1)){
 #saveRDS(list_of_matrices_1, file="list_of_matrices_1.RData")
 #saveRDS(list_of_matrices_2, file="list_of_matrices_2.RData")
 
-#list_of_matrices_1<-readRDS("list_of_matrices_1.RData")
-#list_of_matrices_2<-readRDS("list_of_matrices_2.RData")
+list_of_matrices_1<-readRDS("list_of_matrices_1.RData")
+list_of_matrices_2<-readRDS("list_of_matrices_2.RData")
 ```
 
 ```{r}
@@ -632,7 +627,7 @@ runs<-500
 
 for(r in 1:runs){
     ifelse((runif(1)<0.1),
-    N1_new<-50,#round(rnorm(n=1,mean=40,sd=10)),
+    N1_new<-50,#round(tail(Patch_1_list$matrix["overall"],1)*runif(n=1, min=0.1, max=0.3)),
     N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters))
     
     N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
@@ -653,7 +648,7 @@ for(r in 1:runs){
 ```
 
 ```{r}
-to_plot<-Patch_2_list$matrix
+to_plot<-Patch_1_list$matrix
 #many_plotted_lines(Patch_1_list$matrix)
 plot(to_plot[,"AA"], col="red", lty=1, lwd=1, las=1, type="l", pch=16, xlab="generations", ylab="individuals (N)", ylim=c(0,540))
 lines(to_plot[,"AB"], col="violet")
