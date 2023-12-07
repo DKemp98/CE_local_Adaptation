@@ -79,8 +79,8 @@ dispersal<-function(matrix1, matrix2, parameter1,parameter2, year, method="defau
                         TRUE ~ 0.1)
   
  
-  d_1to2<-round(last_row1[,c("AA","AB","BB")]*disp_prob1)
-  d_2to1<-round(last_row2[,c("AA","AB","BB")]*disp_prob2)
+  d_1to2<-floor(last_row1[,c("AA","AB","BB")]*disp_prob1)
+  d_2to1<-floor(last_row2[,c("AA","AB","BB")]*disp_prob2)
   
   change_1<-c(d_2to1-d_1to2,sum(d_2to1)-sum(d_1to2))
   change_2<-c(d_1to2-d_2to1,sum(d_1to2)-sum(d_2to1))
@@ -140,11 +140,12 @@ Fusion<-function(gamete_vector=test_vector,N=test_N){
   M<-0
   num_gametes<-length(gamete_vector)
   
+  #the vector of gametes is randomly sampled in-place
   ifelse(N*2>num_gametes,
     final_gametes<-gamete_vector[sample(num_gametes)],     
     final_gametes<-gamete_vector[sample(num_gametes,size=N*2,replace=FALSE)])
-  
-  for (i in seq(1,length(final_gametes)-1,2)){
+
+    for (i in seq(1,length(final_gametes)-1,2)){
     first<-final_gametes[i]
     second<-final_gametes[i+1]
     ifelse(first==second,
@@ -347,16 +348,16 @@ legend("topright",
 
 Looking at these values, it seems that with a small enough selection coefficient, like 5% here, random chance will be in a lot of cases more influential than adaption, as we barely see any trend in one direction or the other. A random (series of) event(s) that may influence the frequency of genotypes seems to weight stronger than the adaptation.
 
-```{r 220min}
+```{r Parameter space exploration 1h+!, eval=FALSE, include=FALSE}
 set.seed(33)
 #Low selection coefficient, low chance of dispersal, 300years, max population of 500, same circumstances in both patches. To improve time-performance, gamete production does not use random draws, but prob*Gametes
-runs<-300
+runs<-500
 list_of_matrices_1<-list()
 list_of_matrices_2<-list()
 
 heterozygote_coefficient <-0.5
-selection_coefficients<-seq(0,8)/20
-disperal_probs<-seq(1,5)/20
+selection_coefficients<-seq(0,6)/40
+disperal_probs<-c(seq(0,5)/40,0.5)#/seq(0,6)20
 
 for(sc in selection_coefficients){
   for (d in disperal_probs){
@@ -407,8 +408,7 @@ for(sc in selection_coefficients){
       Patch_2<-cbind(Patch_2,Patch_2_list$matrix)
   
     }
-    #assign(Name1,Patch_1)
-    #assign(Name2,Patch_2)
+
     list_of_matrices_1[[Name1]]<-Patch_1
     list_of_matrices_2[[Name2]]<-Patch_2
     
@@ -417,7 +417,7 @@ for(sc in selection_coefficients){
 ```
 
 ```{r reshaping data}
-runs<-300
+runs<-500
 one_big_dataframe<-matrix(ncol=8,dimnames = list("",c("AA","AB","BB","overall","dispersal_probability","selection_coefficient","run","Year")))
 
 for (name in names(list_of_matrices_1)){
@@ -434,7 +434,7 @@ for (name in names(list_of_matrices_1)){
     high_indice<-r*4+1
     subset_big_table<-list_of_matrices_1[[name]][,low_indice:high_indice] 
     
-    new_cols<-matrix(data=c(rep(d_num,runs+1),rep(sc_num,runs+1), rep(r,runs+1),seq(0:runs-1)),ncol=4,nrow=runs+1,byrow=FALSE,dimnames =   list(seq(1:301),c("dispersal_probability","selection_coefficient","run","Year")))
+    new_cols<-matrix(data=c(rep(d_num,runs+1),rep(sc_num,runs+1), rep(r,runs+1),seq(0:runs-1)),ncol=4,nrow=runs+1,byrow=FALSE,dimnames =   list(seq(1:(runs+1)),c("dispersal_probability","selection_coefficient","run","Year")))
   one_big_dataframe<-rbind(one_big_dataframe, cbind(subset_big_table,new_cols))
   }
     
@@ -442,7 +442,7 @@ for (name in names(list_of_matrices_1)){
 
 ```
 
-```{r}
+```{r Writing/Loading of computations}
 #saveRDS(list_of_matrices_1, file="list_of_matrices_1.RData")
 #saveRDS(list_of_matrices_2, file="list_of_matrices_2.RData")
 
@@ -450,54 +450,28 @@ list_of_matrices_1<-readRDS("list_of_matrices_1.RData")
 list_of_matrices_2<-readRDS("list_of_matrices_2.RData")
 ```
 
-```{r}
-#one_big_dataframe_1<-one_big_dataframe[-1,]
-#write.table(one_big_dataframe_1,file="Parameter_Space_Exploration_Patch1.txt",col.names = TRUE,row.names = FALSE)
-#one_big_dataframe_2<-one_big_dataframe[-1,]
-#write.table(one_big_dataframe_2,file="Parameter_Space_Exploration_Patch2.txt",col.names = TRUE,row.names = FALSE)
-```
-
-```{}
-```
-
-```{r fig.height=7, fig.width=14}
+```{r Visualization Parameterspace AA, fig.height=7, fig.width=14}
 #Plotting an overview of the whole parameter space, for Patch 1.
-#par(mfcol=c(5,9),
-par(cex=0.7, mai=c(0.06,0.06,0.06,0.06), oma=c(5,1,3,0))
-layout(matrix(c(1:45), nrow = 5, byrow = FALSE))
+par(cex=0.7, mai=c(0.06,0.06,0.06,0.06), oma=c(5,1,4,0))
+layout(matrix(c(1:49), nrow = 7, byrow = FALSE))
 colors<-c("red","violet","blue","black")
 
 for (name in names(list_of_matrices_1)){
-  to_plot<-list_of_matrices_1[[name]]
-  
-  plot(to_plot[,"BB"], col=alpha("blue",0.2), lty=1, lwd=1, las=1, type="l", pch=16,ylim=c(0,550), axes=FALSE)
-  
-  axis(1, at=c(0,100,200,300), labels = FALSE,tck = 0.02)
+  many_plotted_lines(to_plot=list_of_matrices_1[[name]],axes=FALSE, upper_y = 550)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
   axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
-  for (i in 2:dim(to_plot)[2]){
-    which_type<-str_detect(colnames(to_plot)[i],c("AA","AB","BB","overall"))
-    if (which_type[3]||which_type[2]||which_type[1]){
-      lines(to_plot[,i], lty=1, col=alpha(colors[which_type],0.2), lwd=1)
-      }
-  }
-  mean_BB_1<-apply(to_plot[,str_detect(colnames(to_plot),"BB")],1, mean)
-  lines(mean_BB_1,col="darkblue",lwd=2,lty=3)
-  mean_AA_1<-apply(to_plot[,str_detect(colnames(to_plot),"AA")],1, mean)
-  lines(mean_AA_1,col="darkred",lwd=2,lty=3)
-  mean_AB_1<-apply(to_plot[,str_detect(colnames(to_plot),"AB")],1, mean)
-  lines(mean_AB_1,col="darkviolet",lwd=2,lty=3)
-  mean_overall<-apply(to_plot[,str_detect(colnames(to_plot),"overall")],1, mean)
-  lines(mean_overall,col="black",lwd=2,lty=3)
 }
-mtext("AA-favored Patch, frequency of genotypes",side=3,cex=1.2,outer=TRUE) 
-mtext("selection coefficient:0.00                    0.05                                     0.10                                         0.15                                         0.20                                         0.25                                         0.30                                         0.35                                         0.40",                   
+mtext("AA-favored Patch, frequency of genotypes",side=3,cex=1.2, line= 2,outer=TRUE) 
+
+
+mtext("selection coefficient:0.00                                  0.025                                                 0.05                                                     0.075                                    0.1                                                   0.125                                                0.15                ",                   
       side = 3,
-      line= -1,
+      #line= 2,
       cex=0.8,
       outer = TRUE)
-mtext("   dispersal prob.: 0.25                           0.20                            0.15                            0.10                             0.05                     ",
+mtext("         dispersal prob.: 0.5               0.0125             0.1                0.075                0.05                 0.025                   0.0                    ",
       side=2, 
-      line=0,
+      #line=-1,
       cex=0.8,
       outer=TRUE )
 par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
@@ -508,44 +482,26 @@ legend("bottom",
   c("mean AA", "mean AB", "mean BB", "mean overall"),inset=c(0,-0.00), lty=3, lwd=4, cex=1.1, col=c("darkred", "darkviolet","darkblue","black"), box.col=NA, horiz = TRUE, xpd=TRUE)
 ```
 
-```{r fig.height=7, fig.width=14}
+```{r Visualization Parameterspace BB, fig.height=7, fig.width=14}
 #Plotting an overview of the whole parameter space, for Patch 2.
-#par(mfcol=c(5,9),
-par(cex=0.7, mai=c(0.06,0.06,0.06,0.06), oma=c(5,1,3,0))
-layout(matrix(c(1:45), nrow = 5, byrow = FALSE))
+par(cex=0.7, mai=c(0.06,0.06,0.06,0.06), oma=c(5,1,4,0))
+layout(matrix(c(1:49), nrow = 7, byrow = FALSE))
 colors<-c("red","violet","blue","black")
 
 for (name in names(list_of_matrices_2)){
-  to_plot<-list_of_matrices_2[[name]]
-  
-  plot(to_plot[,"BB"], col=alpha("blue",0.2), lty=1, lwd=1, las=1, type="l", pch=16,ylim=c(0,550), axes=FALSE)
-  
-  axis(1, at=c(0,100,200,300), labels = FALSE,tck = 0.02)
+  many_plotted_lines(to_plot=list_of_matrices_2[[name]],axes=FALSE, upper_y = 550)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
   axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
-  for (i in 2:dim(to_plot)[2]){
-    which_type<-str_detect(colnames(to_plot)[i],c("AA","AB","BB","overall"))
-    if (which_type[3]||which_type[2]||which_type[1]){
-      lines(to_plot[,i], lty=1, col=alpha(colors[which_type],0.2), lwd=1)
-      }
-  }
-  mean_BB_1<-apply(to_plot[,str_detect(colnames(to_plot),"BB")],1, mean)
-  lines(mean_BB_1,col="darkblue",lwd=2,lty=3)
-  mean_AA_1<-apply(to_plot[,str_detect(colnames(to_plot),"AA")],1, mean)
-  lines(mean_AA_1,col="darkred",lwd=2,lty=3)
-  mean_AB_1<-apply(to_plot[,str_detect(colnames(to_plot),"AB")],1, mean)
-  lines(mean_AB_1,col="darkviolet",lwd=2,lty=3)
-  mean_overall<-apply(to_plot[,str_detect(colnames(to_plot),"overall")],1, mean)
-  lines(mean_overall,col="black",lwd=2,lty=3)
 }
-mtext("BB-favored Patch, frequency of genotypes",side=3,cex=1.2,outer=TRUE) 
-mtext("selection coefficient:0.00                    0.05                                     0.10                                         0.15                                         0.20                                         0.25                                         0.30                                         0.35                                         0.40",                   
+mtext("BB-favored Patch, frequency of genotypes",side=3,cex=1.2, line= 2,outer=TRUE) 
+
+
+mtext("selection coefficient:0.00                                  0.025                                                 0.05                                                     0.075                                    0.1                                                   0.125                                                0.15                ",                   
       side = 3,
-      line= -1,
       cex=0.8,
       outer = TRUE)
-mtext("   dispersal prob.: 0.25                           0.20                            0.15                            0.10                             0.05                     ",
+mtext("         dispersal prob.: 0.5               0.0125             0.1                0.075                0.05                 0.025                   0.0                    ",
       side=2, 
-      line=0,
       cex=0.8,
       outer=TRUE )
 par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
@@ -554,17 +510,15 @@ legend("bottom",
   c("genotype AA", "genotype AB", "genotype BB"),inset=c(0,0.04), lty=1, lwd=4, cex=1.1, col=c(alpha("red",0.4), alpha("violet",0.4),alpha("blue",0.4)), box.col=NA, horiz = TRUE, xpd=TRUE)
 legend("bottom",
   c("mean AA", "mean AB", "mean BB", "mean overall"),inset=c(0,-0.00), lty=3, lwd=4, cex=1.1, col=c("darkred", "darkviolet","darkblue","black"), box.col=NA, horiz = TRUE, xpd=TRUE)
-
 ```
 
-```{r}
-
+```{r Creating a relevant subset, include=FALSE}
 indices_interesting<-c(1)
 for (i in 1:5){
-  indices_interesting<-c(indices_interesting,round(300^(i/5))+1)
+  indices_interesting<-c(indices_interesting,round(500^(i/5))+1)
 }
-
-freq_time<-matrix(data = NA,nrow=0,ncol=14, dimnames = list(c(),c("A_1", "A_4", "A_11", "A_32", "A_97", "A_301", "B_1",   "B_4", "B_11", "B_32",  "B_97", "B_301", "disp_prob", "sc")))
+colnames_indices_int<-c(paste("A",indices_interesting,sep="_"), paste("B",indices_interesting, sep="_"), "disp_prob", "sc")
+freq_time<-matrix(data = NA,nrow=0,ncol=14, dimnames = list(c(),colnames_indices_int))
 for (name in names(list_of_matrices_1)){
   to_plot<-list_of_matrices_1[[name]]
   
@@ -573,6 +527,9 @@ for (name in names(list_of_matrices_1)){
   if (is.na(sc_num)){
     sc_num<-0
   }
+  if (is.na(d_num)){
+    d_num<-0
+  }
   
   AA_vector<-apply(to_plot[,str_detect(colnames(to_plot),"AA")],1, mean)
   AB_vector<-apply(to_plot[,str_detect(colnames(to_plot),"AB")],1, mean)
@@ -580,36 +537,55 @@ for (name in names(list_of_matrices_1)){
   AA_freq<-(2*AA_vector+AB_vector)[indices_interesting]
   BB_freq<-(2*BB_vector+AB_vector)[indices_interesting]
   
-  new_row<-matrix(data = c(AA_freq,BB_freq,d_num,sc_num),nrow=1,ncol=14, dimnames = list(name,c("A_1", "A_4", "A_11", "A_32", "A_97", "A_301", "B_1",   "B_4", "B_11", "B_32",  "B_97", "B_301", "disp_prob", "sc")))
+  new_row<-matrix(data = c(AA_freq,BB_freq,d_num,sc_num),nrow=1,ncol=14, dimnames = list(name,colnames_indices_int))
   
   freq_time<-rbind(freq_time,new_row)
   }
 
 ```
 
-```{r}
-rownum<-5
+```{r Plotting the ratio of gene A, echo=FALSE}
+#rownum<-5
 #für jedes Dispersal/selection coeff eine Linie für Spalte 6-12 in aufsteigender Reihenfolge plotten
-ggplot(data=data.frame(freq_time),aes(y=(as.numeric(A_301)/(as.numeric(B_301)+as.numeric(A_301))),x=sc, group=disp_prob,col=disp_prob))+geom_line()
+ggplot(data=data.frame(freq_time),aes(y=(as.numeric(A_501)/(as.numeric(B_501)+as.numeric(A_501))),x=sc, group=disp_prob,col=disp_prob))+geom_line()
 
-ggplot(data=data.frame(freq_time),aes(y=(as.numeric(A_301)/(as.numeric(B_301)+as.numeric(A_301))),x=disp_prob, group=sc,col=sc))+geom_line()
+ggplot(data=data.frame(freq_time),aes(y=(as.numeric(A_501)/(as.numeric(B_501)+as.numeric(A_501))),x=disp_prob, group=sc,col=sc))+geom_line()
 ```
 
 #Szenario: what if one patch is somewhat better suited for survival, allowing a stronger possible growth, while the other patch is more secure?
 
 One possible situation could be: there are two possible nesting sides for the AB-Birds, one at a steep slope, close to the water, secure from predators. The gene AA is advantageous here,as it leads to a more impressive plumage to impress mates. The other nesting side is farther of the coast, and some predators can snatch up roosting individuals and their eggs, the plain BB plumage is very much advantageous here. In some few years, extraordinary disasters may destroy the brood in the first patch, leaving only very few lucky individuals.
+```{r}
+b_0009<-c()
+b_001<-c()
+b_0011<-c()
+sample_matrix<-matrix(data=c(50,100,50,200),ncol=4,dimnames = list("Test",colnames))
+para_00095<-list(N0=200, b=0.0009, l_max=1.45)
+para_001<-list(N0=200, b=0.001, l_max=1.5)
+para_0011<-list(N0=200, b=0.0011, l_max=1.55)
+for(i in 1:500){
+  b_0009<-c(b_0009,population_change(sample_matrix,para_00095)-200)
+  b_001<-c(b_001,population_change(sample_matrix,para_001)-200)
+  b_0011<-c(b_0011,population_change(sample_matrix,para_00105)-200)
+}
+to_plot<-matrix(data=c(b_0009,b_001,b_0011),ncol = 3, dimnames = list(c(1:500),c("b=0.0009, l_max=1.45","b=0.001, l_max=1.5","b=0.0011, l_max=1.55")))
+boxplot(to_plot)
+```
+
 
 ```{r}
-#Patch 1 is more advantageous to live overall, the lower b will facillitate faster growth, but both patches trend towards a population size of 500.
-selection_coefficient <- 0.02
+#Patch 1 is more advantageous to live overall, the higher b will facillitate faster growth, but both patches trend towards a population size of 500.
+selection_coefficient <- 0.05
 heterozygote_coefficient <-0.5
-
-para_patch1<-list(N0=200, b=0.00095, l_max=1.475, 
-                  wanderlust=1, dispersal_prob=0.15,
+#N0=200, b=0.00105, l_max=1.525
+#N0=200, b=0.001, l_max=1.5
+#N0=200, b=0.00095, l_max=1.475
+para_patch1<-list( N0=200, b=0.001, l_max=1.5,
+                  wanderlust=1, dispersal_prob=0.1,
                   favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
 
-para_patch2<-list(N0=200, b=0.001, l_max=1.5,
-                  wanderlust=1, dispersal_prob=0.15,
+para_patch2<-list(N0=200, b=0.001, l_max=1.5,#N0=200, b=0.0009, l_max=1.45,
+                  wanderlust=1, dispersal_prob=0.1,
                   favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
 
 matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
@@ -622,38 +598,95 @@ Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
 
 ```{r}
 set.seed(44)
-#Low selection coefficient, low chance of dispersal, 300years, max population of 500, same circumstances in both patches. To improve time-performance, gamete production does not use random draws, but prob*Gametes
 runs<-500
+list_differing_rate1<-list()
+list_differing_rate2<-list()
+parameter_list<-list(small=list(N0=200, b=0.0009, l_max=1.45,
+                  wanderlust=1, dispersal_prob=0.15,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  medium=list(N0=200, b=0.001, l_max=1.5,
+                  wanderlust=1, dispersal_prob=0.15,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  large=list(N0=200, b=0.0011, l_max=1.55,
+                  wanderlust=1, dispersal_prob=0.15,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient))
+for(name in names(parameter_list)){
+  differing_rates_1<-matrix(nrow=runs+1,ncol=1)
+  differing_rates_2<-matrix(nrow=runs+1,ncol=1)
+  for( i in 1:20){
+     matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),colnames))
+      
+      matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,para_patch2$N0),ncol=4,dimnames = list(c("Year_0"),colnames))
+      
+      Patch_1_list<-list(parameters=parameter_list[[name]], matrix=matrix_patch1)
+      Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
+      
+    for(r in 1:runs){
+        #ifelse((runif(1)<0.1),
+        #N1_new<-ceiling(tail(Patch_1_list$matrix,1)[,"overall"]*runif(n=1, min=0.1, max=0.3)),
+        N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)#)
+        
+        N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
+        
+        disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_2_list$parameters, year=i,method="even")
+        
+        if(N1_new>0){
+        gamete_vector1<-gamete_production(disp_result$row1,Patch_1_list$parameters, N1_new)
+        result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))
+        }else{result1<-matrix(data=c(0,0,0,0),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))}
+        
+        if(N2_new>0){
+        result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))
+        gamete_vector2<-gamete_production(disp_result$row2,Patch_2_list$parameters, N2_new)
+        }else{result2<-matrix(data=c(0,0,0,0),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))}
+        
+        Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
+        Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
+    }
+    differing_rates_1<-cbind(differing_rates_1,Patch_1_list$matrix)
+    differing_rates_2<-cbind(differing_rates_2,Patch_2_list$matrix)
+  }
+  list_differing_rate1[[paste("P1_",name,"_d=0.1_sc=0.05",sep="")]]<-differing_rates_1
+  list_differing_rate2[[paste("P2_",name,"_d=0.1_sc=0.05",sep="")]]<-differing_rates_2
 
-for(r in 1:runs){
-    ifelse((runif(1)<0.1),
-    N1_new<-50,#round(tail(Patch_1_list$matrix["overall"],1)*runif(n=1, min=0.1, max=0.3)),
-    N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters))
-    
-    N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
-    
-    disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_2_list$parameters, year=i,method="even")
-    
-    gamete_vector1<-gamete_production(disp_result$row1,Patch_1_list$parameters, N1_new)
-    gamete_vector2<-gamete_production(disp_result$row2,Patch_2_list$parameters, N2_new)
-    
-    result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),colnames))
-    
-    result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),colnames))
-    
-    Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
-    Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
-    
 }
 ```
 
 ```{r}
-to_plot<-Patch_1_list$matrix
-#many_plotted_lines(Patch_1_list$matrix)
-plot(to_plot[,"AA"], col="red", lty=1, lwd=1, las=1, type="l", pch=16, xlab="generations", ylab="individuals (N)", ylim=c(0,540))
-lines(to_plot[,"AB"], col="violet")
-lines(to_plot[,"BB"], col="blue")
-lines(to_plot[,"overall"],col="black")
+par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
+layout(matrix(c(1:3), nrow = 1))
+many_plotted_lines(list_differing_rate2$`P2_small_d=0.1_sc=0.05`,upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+many_plotted_lines(list_differing_rate2$`P2_medium_d=0.1_sc=0.05`,upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+many_plotted_lines(list_differing_rate2$`P2_large_d=0.1_sc=0.05`,upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+```
+
+
+```{r}
+par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
+layout(matrix(c(1:2), nrow = 1), widths=c(5,3))
+many_plotted_lines(to_plot=differing_rates_1, upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+many_plotted_lines(to_plot=list_of_matrices_1$`P1_d=0.15_sc=0.05_run=10`, upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+```
+```{r}
+par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
+layout(matrix(c(1:2), nrow = 1), widths=c(5,3))
+many_plotted_lines(to_plot=differing_rates_2, upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+  
+many_plotted_lines(to_plot=list_of_matrices_2$`P2_d=0.15_sc=0.05_run=10`, upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
 ```
 
 #- Es gibt nur einen Patch, bei dem überhaupt gejagt wird/die Population kurzzeitig stark eingeschränkt sein kann.
