@@ -36,17 +36,17 @@ population_change <- function(matrix,parameters, ...) {
 
 ```
 
-The population_dependent option in dispersal has different values depending on the ratio of current population/stable population. Here, we use the percentage of draws from the logistic function, scale=ratio, above 1 to get a change of dispersal. This results in dispersal rates close to zero for small populations, but more varied and larger rates for populations close, or above the maximum stable population size.
+The population_dependent option in dispersal has different values depending on the ratio of current population/stable population. Here, we use a transformed ratio of the ratio current population/max population and take the ratio of random realisations above that as a  percentage. This results in dispersal rates close to zero for small populations, but more varied and larger rates for populations close, or above the maximum stable population size. Due to a linear factor, the results all fall between 0 and 0.4.
 ```{r Testing population dependent dispersal}
 to_try<-seq(50,650,25)/500
-empty<-matrix(data=NA,nrow=10,ncol=length(to_try))
+empty<-matrix(data=NA,nrow=20,ncol=length(to_try))
 colnames(empty)<-to_try
-for(i in 1:10){
+for(i in 1:dim(empty)[1]){
   k<-0
   for (z in to_try){
     k<-k+1
-    test_scale<-z#sqrt(z)
-    empty[i,k]<-sum(rlogis(100, location=-0.1, scale=test_scale)>1)/100
+    test_scale<-((1.1*z)**3)*1.7
+    empty[i,k]<-sum(rlogis(50, location=2.5)<test_scale)/125
   }
 }
 boxplot(empty, main="Dispersal probability vs \n current/sustainable population")
@@ -63,19 +63,26 @@ randomly_drawn<-function(n,p){
   return(sum(rbern(n,p)))
 }
 
+return_prob<-function(n,N_max){
+      limit<-((1.1*n/N_max)**3)*1.7
+      return(sum(rlogis(50, location=2.5)<limit)/125)
+}
+
 dispersal<-function(matrix1, matrix2, parameter1,parameter2, year, method="default",  ...){
   last_row1<-tail(matrix1,n=1)
   last_row2<-tail(matrix2,n=1)
+  n1<-last_row1[,"overall"]
+  n2<-last_row2[,"overall"]
 
   pop_max1<-  (parameter1$l_max-1)/parameter1$b
   pop_max2<-  (parameter2$l_max-1)/parameter2$b
   
   disp_prob1<-case_when(method=="even" ~ parameter1$dispersal_prob,
-                        method=="population_dependent" ~ (sum(rlogis(100,scale=last_row1[,"overall"]/pop_max1, location=-0.1)>1)/100)*parameter1$wanderlust,
+                        method=="population_dependent" ~ return_prob(n1,pop_max1)*parameter1$wanderlust,
                         TRUE ~ 0.1)
   
   disp_prob2<-case_when(method=="even" ~ parameter2$dispersal_prob,
-                        method=="population_dependent" ~ (sum(rlogis(100,scale=last_row2[,"overall"]/pop_max2, location=-0.1)>1)/100)*parameter2$wanderlust,
+                        method=="population_dependent" ~ return_prob(n2,pop_max2)*parameter2$wanderlust,
                         TRUE ~ 0.1)
   
  
@@ -580,12 +587,9 @@ heterozygote_coefficient <-0.5
 #N0=200, b=0.00105, l_max=1.525
 #N0=200, b=0.001, l_max=1.5
 #N0=200, b=0.00095, l_max=1.475
-para_patch1<-list( N0=200, b=0.001, l_max=1.5,
-                  wanderlust=1, dispersal_prob=0.1,
-                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
 
 para_patch2<-list(N0=200, b=0.001, l_max=1.5,#N0=200, b=0.0009, l_max=1.45,
-                  wanderlust=1, dispersal_prob=0.1,
+                  wanderlust=1, dispersal_prob=0.15,
                   favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
 
 matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
@@ -595,26 +599,33 @@ matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,
 Patch_1_list<-list(parameters=para_patch1, matrix=matrix_patch1)
 Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
 ```
-
+First, looking at different parameters for growth. Will different b, l_max influence the overall rates of A and B in both populations?
 ```{r}
 set.seed(44)
 runs<-500
+selection_coefficient <- 0.05
+heterozygote_coefficient <-0.5
+
 list_differing_rate1<-list()
 list_differing_rate2<-list()
 parameter_list<-list(small=list(N0=200, b=0.0009, l_max=1.45,
                   wanderlust=1, dispersal_prob=0.15,
                   favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
                   medium=list(N0=200, b=0.001, l_max=1.5,
                   wanderlust=1, dispersal_prob=0.15,
                   favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
                   large=list(N0=200, b=0.0011, l_max=1.55,
                   wanderlust=1, dispersal_prob=0.15,
-                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient))
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient)  )
+
+
 for(name in names(parameter_list)){
   differing_rates_1<-matrix(nrow=runs+1,ncol=1)
   differing_rates_2<-matrix(nrow=runs+1,ncol=1)
   for( i in 1:20){
-     matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),colnames))
+     matrix_patch1<-matrix(data=c(parameter_list[[name]]$N0/4,parameter_list[[name]]$N0/2,parameter_list[[name]]$N0/4,parameter_list[[name]]$N0),ncol=4,dimnames = list(c("Year_0"),colnames))
       
       matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,para_patch2$N0),ncol=4,dimnames = list(c("Year_0"),colnames))
       
@@ -622,23 +633,22 @@ for(name in names(parameter_list)){
       Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
       
     for(r in 1:runs){
-        #ifelse((runif(1)<0.1),
-        #N1_new<-ceiling(tail(Patch_1_list$matrix,1)[,"overall"]*runif(n=1, min=0.1, max=0.3)),
-        N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)#)
-        
+        N1_new<-population_change(Patch_1_list$matrix,parameter_list[[name]])
         N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
         
-        disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_2_list$parameters, year=i,method="even")
+        disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=parameter_list[[name]], parameter2=Patch_2_list$parameters, year=i,method="even")
         
         if(N1_new>0){
-        gamete_vector1<-gamete_production(disp_result$row1,Patch_1_list$parameters, N1_new)
+        gamete_vector1<-gamete_production(disp_result$row1,parameter_list[[name]], N1_new)
         result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))
-        }else{result1<-matrix(data=c(0,0,0,0),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))}
+        }else{
+          result1<-matrix(data=c(0,0,0,0),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))}
         
         if(N2_new>0){
         result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))
         gamete_vector2<-gamete_production(disp_result$row2,Patch_2_list$parameters, N2_new)
-        }else{result2<-matrix(data=c(0,0,0,0),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))}
+        }else{
+          result2<-matrix(data=c(0,0,0,0),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))}
         
         Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
         Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
@@ -655,27 +665,22 @@ for(name in names(parameter_list)){
 ```{r}
 par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
 layout(matrix(c(1:3), nrow = 1))
-many_plotted_lines(list_differing_rate2$`P2_small_d=0.1_sc=0.05`,upper_y=550,axes=FALSE)
+for (table in list_differing_rate2){
+many_plotted_lines(table,upper_y=550,axes=FALSE)
   axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
   axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
-many_plotted_lines(list_differing_rate2$`P2_medium_d=0.1_sc=0.05`,upper_y=550,axes=FALSE)
-  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
-  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
-many_plotted_lines(list_differing_rate2$`P2_large_d=0.1_sc=0.05`,upper_y=550,axes=FALSE)
-  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
-  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+}
 ```
 
 
 ```{r}
 par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
-layout(matrix(c(1:2), nrow = 1), widths=c(5,3))
-many_plotted_lines(to_plot=differing_rates_1, upper_y=550,axes=FALSE)
+layout(matrix(c(1:3), nrow = 1), widths=c(1,1,1))
+for (table in list_differing_rate1){
+many_plotted_lines(to_plot=table, upper_y=550,axes=FALSE)
   axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
   axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
-many_plotted_lines(to_plot=list_of_matrices_1$`P1_d=0.15_sc=0.05_run=10`, upper_y=550,axes=FALSE)
-  axis(1, at=c(0,100,200,300), labels = FALSE,tck = 0.02)
-  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+}
 ```
 ```{r}
 par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
