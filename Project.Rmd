@@ -11,9 +11,13 @@ library('dplyr')
 library('Rlab')
 library('stringr')
 library('forecast')
+install.packages("ggplotify")                         # Install ggplotify package
+library("ggplotify") 
+install.packages("patchwork")                         # Install & load patchwork
+library("patchwork")
+install.packages("cowplot")                           # Install cowplot package
+library("cowplot") 
 ```
-
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
 
 ALL THE FOLLOWING FUNCTIONS, UP TO AND FUSION SHOULD ALSO HAVE A TABLE EITHER AS INPUT, OR WORK ON A TABLE THAT IS CHANGED THROUGH THEIR CALL.
 
@@ -176,58 +180,124 @@ Patch_1_list<-list(parameters=para_patch1, matrix=matrix_patch1)
 Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
 ```
 
-```{R}
+```{R Definition of combined function}
+run_several<-function(repetitions,years,paras1,paras2,one_result=FALSE, disp_method="even", record_disp=FALSE,dangers=list(prob_of_crash=c(0,0), crash_severity=c(0.7,0.7), dangers1=FALSE, dangers2=FALSE, depletion=c(2.0,2.0), ressource_decline=c(0.1,0.1),recovery=c(0.5,0.5),min_pop=c(20,20)))
+  {
+  if(record_disp){
+    disp_patch_1<-matrix(nrow=years+1,ncol=0)
+    disp_patch_2<-matrix(nrow=years+1,ncol=0)
+  }
+  patch1_result<-matrix(nrow=years+1,ncol=0)
+  patch2_result<-matrix(nrow=years+1,ncol=0)
+  
+  for (i in 1:repetitions){
+    matrix_patch1<-matrix(data=c(paras1$N0/4,paras1$N0/2,paras1$N0/4,paras1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+    matrix_patch2<-matrix(data=c(paras2$N0/4,paras2$N0/2,paras2$N0/4,paras2$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+    
+    if(record_disp){
+      disp_matrix_1<-matrix(data=c(0,0,0),ncol=3,nrow=1,dimnames = list(c("Year_0"),c("AA","AB","BB")))
+      disp_matrix_2<-matrix(data=c(0,0,0),ncol=3,nrow=1,dimnames = list(c("Year_0"),c("AA","AB","BB")))
+    }
+    Patch_1_list<-list(parameters=paras1, matrix=matrix_patch1)
+    Patch_2_list<-list(parameters=paras2, matrix=matrix_patch2)
+  
+    max_pop1<-(paras1$l_max-1)/paras1$b
+    max_pop2<-(paras2$l_max-1)/paras2$b
+    
+    for(i in 1:years){
+      
+        if(dangers$dangers1){
+          #crash patch 1
+          if(runif(1)<dangers$prob_of_crash[1]){
+            N1_post_crash<-ceiling(tail(Patch_1_list$matrix[,"overall"],1)*(1-runif(2,dangers$crash_severity[1],dangers$crash_severity[1]+0.2)))
+            N1_new<-max(dangers$min_pop[1],N1_post_crash)
+          }else{
+          N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)
+          #ressource depletion patch 1
+          if ((N1_new/max_pop1)>=dangers$depletion[1]){
+            Patch_1_list$parameters$l_max<-Patch_1_list$parameters$l_max*(1-dangers$ressource_decline[1])
+          }
+          if ((N1_new<=dangers$recovery[1])&&(Patch_1_list$parameters$l_max!=paras1$l_max)){
+            Patch_1_list$parameters$l_max<-min(Patch_1_list$parameters$l_max*(1+dangers$ressource_decline[1]),paras1$l_max)}}
+        }else{
+        N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)}
+        
+        if(dangers$dangers2){
+          if(runif(1)<dangers$prob_of_crash[2]){
+            N2_post_crash<-ceiling(tail(Patch_2_list$matrix[,"overall"],1)*(1-runif(2,dangers$crash_severity[2],dangers$crash_severity[2]+0.2)))
+            N2_new<-max(dangers$min_pop[2],N2_post_crash)
+          }else{
+            N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
+            if ((N2_new/max_pop2)>=dangers$depletion[2]){
+              Patch_2_list$parameters$l_max<-Patch_2_list$parameters$l_max*(1-dangers$ressource_decline[2])}
+            if ((N2_new<=dangers$recovery[2])&&(Patch_2_list$parameters$l_max!=paras2$l_max)){
+              Patch_2_list$parameters$l_max<-min(Patch_2_list$parameters$l_max*(1+dangers$ressource_decline[2]),paras2$l_max)}}
+        }else{
+        N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)}
+        
+        disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_2_list$parameters, year=i,method=disp_method)
+        
+        if(record_disp){
+          disp_matrix_1<-rbind(disp_matrix_1,disp_result$d_1to2)
+          disp_matrix_2<-rbind(disp_matrix_2,disp_result$d_2to1)
+        }
+        gamete_vector1<-gamete_production(disp_result$row1,Patch_1_list$parameters, N1_new)
+        gamete_vector2<-gamete_production(disp_result$row2,Patch_2_list$parameters, N2_new)
+        
+        result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+        result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+        
+        Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
+        Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
+    }
+    if (one_result){
+    patch1_result<-cbind(patch1_result,Patch_1_list$matrix,Patch_2_list$matrix)}
+    else{
+      patch1_result<-cbind(patch1_result,Patch_1_list$matrix)
+      patch2_result<-cbind(patch2_result,Patch_2_list$matrix)
+      if(record_disp){
+        disp_patch_1<-cbind(disp_patch_1,disp_matrix_1)
+        disp_patch_2<-cbind(disp_patch_2,disp_matrix_2)
+  
+      }
+    }
+  }
+  ifelse(one_result,
+         return(patch1_result),
+         ifelse(record_disp,
+                return(list(patch1_result,patch2_result,disp_patch_1,disp_patch_2)),
+                return(list(patch1_result,patch2_result))
+         )
+  )
+  
+}
+
+```
+
+```{r}
 set.seed(11)
 #Minimal example, two Patches, no advantages for either genotype, 200 years, 400 individuals is the stable max population, no dispersal, how does the amount of individuals with different genotypes change? 
-first<-Sys.time()
+
 selection_coefficient <- 0
 heterozygote_coefficient <-0
 
 para_patch1<-list(N0=400, b=0.001, l_max=1.4, 
-                  wanderlust=1, dispersal_prob=0.15,
+                  wanderlust=1, dispersal_prob=0,
                   favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
 
 para_patch2<-list(N0=400, b=0.001, l_max=1.4,
-                  wanderlust=1, dispersal_prob=0.15,
+                  wanderlust=1, dispersal_prob=0,
                   favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
-
-Big_Patches<-matrix(nrow=201)
-for (i in 1:5){
-  matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
-
-  matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,para_patch2$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
-  
-  Patch_1_list<-list(parameters=para_patch1, matrix=matrix_patch1)
-  Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
-
-  for(i in 1:200){
-    N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)
-    N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
-    
-    gamete_vector1<-gamete_production(tail(Patch_1_list$matrix,1),Patch_1_list$parameters, N1_new)
-    gamete_vector2<-gamete_production(tail(Patch_2_list$matrix,1),Patch_2_list$parameters, N2_new)
-    
-    result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
-    
-    result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
-    
-    Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
-    Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
-    
-  }
-  Big_Patches<-cbind(Big_Patches,Patch_1_list$matrix,Patch_2_list$matrix)
-}
-
-run_time<-Sys.time()-first
+Big_Patches<-run_several(repetitions = 10, years=200, paras1 = para_patch1, paras2=para_patch2, one_result = TRUE)
 
 ```
 
 ```{r Plot Def}
 mean_AA_1<-c()
-many_plotted_lines<-function(to_plot,upper_y=500,to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE, show_mean=TRUE),title="",transparency=0.2, axes=TRUE){
+many_plotted_lines<-function(to_plot,upper_y=500,to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE, show_mean=TRUE),title="",transparency=0.2, axes=TRUE,labels=TRUE){
   faint_lines<-(to_vis$AA||to_vis$AB||to_vis$BB||to_vis$overall)
   column_names<-c("AA","AB","BB","overall")
-  plot(to_plot[,"overall"], col=alpha("black",0), lty=1, lwd=1, las=1, type="l", pch=16, xlab="generations", ylab="individuals (N)", ylim=c(0,upper_y),main=title,axes=axes) # 
+  plot(to_plot[,"overall"], col=alpha("black",0), lty=1, lwd=1, las=1, type="l", pch=16, xlab=ifelse(labels,"generations",""), ylab=ifelse(labels,"individuals (N)",""), ylim=c(0,upper_y),main=title,axes=axes) # 
   colors<-c("red","violet","blue","black")
   for (i in 1:dim(to_plot)[2]){
     which_type<-str_detect(colnames(to_plot)[i],column_names)
@@ -270,12 +340,12 @@ many_plotted_lines<-function(to_plot,upper_y=500,to_vis=list(AA=TRUE,AB=TRUE,BB=
 
 ```
 
-```
+
 
 ```{r Visualization Baseline}
 #In General, in this population size, genotypes are not safe from extinction due to random chance- see columns 30 to 33, in the resulting patches, where  BB frequently drops to 0, and AB is mostly in the low double digits later on.
-#to_plot<-Big_Patches
-many_plotted_lines(Big_Patches,to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=TRUE),title="Genotype Frequency \n no selection, no dispersal")
+#to_plot<-Big_Patchesist(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE, show_mean=TRUE)
+many_plotted_lines(Big_Patches,to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=TRUE, show_mean=TRUE),title="Genotype Frequency \n no selection, no dispersal")
 tail(Big_Patches[,37:40],10)
 
 ```
@@ -567,9 +637,9 @@ In our previous models, the populations stayed mostly stable after an initial gr
 ----------------------------------------------------------------------------------------------------------------
 ##Preliminary looks at the influence of those parameters
 #different rates of growth
-```{r}
+```{r Parameter exploration for b and l_max}
 par(cex=0.6, mai=c(0.2,0.2,0.2,0.2), oma=c(5,1,4,0))
-layout(matrix(c(1:3), nrow = 1))
+layout(matrix(c(1:4), nrow = 1))
 get_data_draw_box<-function(n){
   b_0009<-c()
   b_001<-c()
@@ -578,19 +648,25 @@ get_data_draw_box<-function(n){
   para_0009<-list(N0=200, b=0.0009, l_max=1.45)
   para_001<-list(N0=200, b=0.001, l_max=1.5)
   para_0011<-list(N0=200, b=0.0011, l_max=1.55)
-  for(i in 1:500){
+  for(i in 1:1000){
     b_0009<-c(b_0009,population_change(sample_matrix,para_0009)-n)
     b_001<-c(b_001,population_change(sample_matrix,para_001)-n)
     b_0011<-c(b_0011,population_change(sample_matrix,para_0011)-n)
   }
-  to_plot<-matrix(data=c(b_0009,b_001,b_0011),ncol = 3, dimnames = list(c(1:500),c("b=0.0009, l_max=1.45","b=0.001, l_max=1.5","b=0.0011, l_max=1.55")))
-  boxplot(to_plot, main=paste("Abs. growth from ",n," individuals"), cex=0.6, col=c("rosybrown1","rosybrown3","rosybrown4"),ylim=c(-120,120))
+  to_plot<-matrix(data=c(b_0009,b_001,b_0011),ncol = 3, dimnames = list(c(1:1000),c("b=0.0009, l_max=1.45","b=0.001, l_max=1.5","b=0.0011, l_max=1.55")))
+  boxplot(to_plot, main=paste("Change-",n," individuals"),labels=FALSE,xaxt="n", xlabel="",cex=0.6, col=c("rosybrown1","rosybrown3","rosybrown4"),ylim=c(-120,120))
 }
 
-for (num in c(100,250,500)){
+for (num in c(50,125,250,500)){
   get_data_draw_box(num)
 }
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+   plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
+legend("bottom",c("b=0.0009, l_max=1.45","b=0.001, l_max=1.5","b=0.0011, l_max=1.55"), fill=c("rosybrown1","rosybrown3","rosybrown4"),cex=1.6, box.col=NA, horiz = TRUE, xpd=TRUE)
 ```
+These boxplots allow us to learn some things about the different growth szenarios - a high b and l_max will lead to a more steady and strong growth while the maintenance population is not reached, as the change is generally more positive and less likely to fall close to zero. Having reached the maintenance population, little difference is visible, although there might be a small chance in the variance, with a lower variance for higher b, l_max.
+
+
 Looking at the absolute growth of a population using different b, l_max, and the initial population size of 200.
 
 #Population dependent dispersal
@@ -607,7 +683,7 @@ for(i in 1:dim(empty)[1]){
     empty[i,k]<-(sum(rlogis(50, location=2.2)<test_scale)/50)*0.25
   }
 }
-boxplot(empty, main="Dispersal probability vs \n current/sustainable population")
+boxplot(empty, main="Dispersal probability (limited to 0.25) vs \n current/sustainable population")
 ```
 
 #Szenario: what if one patch is somewhat better suited for survival, allowing a stronger possible growth, while the other patch is more secure?
@@ -616,118 +692,79 @@ One possible situation could be: there are two possible nesting sides for the AB
 
 
 
-```{r}
-#Patch 1 is more advantageous to live overall, the higher b will facillitate faster growth, but both patches trend towards a population size of 500.
-selection_coefficient <- 0.05
-heterozygote_coefficient <-0.5
-#N0=200, b=0.00105, l_max=1.525
-#N0=200, b=0.001, l_max=1.5
-#N0=200, b=0.00095, l_max=1.475
-
-para_patch2<-list(N0=200, b=0.001, l_max=1.5,#N0=200, b=0.0009, l_max=1.45,
-                  wanderlust=1, dispersal_prob=0.15,
-                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
-
-matrix_patch1<-matrix(data=c(para_patch1$N0/4,para_patch1$N0/2,para_patch1$N0/4,para_patch1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
-
-matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,para_patch2$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
-
-Patch_1_list<-list(parameters=para_patch1, matrix=matrix_patch1)
-Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
-```
 First, looking at different parameters for growth. Will different b, l_max influence the overall rates of A and B in both populations?
-```{r}
+
+
+```{r contrast different growth}
 set.seed(44)
-runs<-500
 selection_coefficient <- 0.05
 heterozygote_coefficient <-0.5
+dispersal_prob <- 0.1
 
 list_differing_rate1<-list()
 list_differing_rate2<-list()
-parameter_list<-list(small=list(N0=200, b=0.0009, l_max=1.45,
-                  wanderlust=1, dispersal_prob=0.15,
+
+parameter_list<-list(smallest=list(N0=200, b=0.0008, l_max=1.4,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
+                  small=list(N0=200, b=0.0009, l_max=1.45,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
                   favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
                   
                   medium=list(N0=200, b=0.001, l_max=1.5,
-                  wanderlust=1, dispersal_prob=0.15,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
                   favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
                   
                   large=list(N0=200, b=0.0011, l_max=1.55,
-                  wanderlust=1, dispersal_prob=0.15,
-                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient)  )
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
+                  largest=list(N0=200, b=0.0012, l_max=1.6,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient))
 
-
+para_patch2<-list(N0=200, b=0.001, l_max=1.5,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
+AA_growth_differs<-list()
+BB_growth_differs<-list()
 for(name in names(parameter_list)){
-  differing_rates_1<-matrix(nrow=runs+1,ncol=1)
-  differing_rates_2<-matrix(nrow=runs+1,ncol=1)
-  for( i in 1:20){
-     matrix_patch1<-matrix(data=c(parameter_list[[name]]$N0/4,parameter_list[[name]]$N0/2,parameter_list[[name]]$N0/4,parameter_list[[name]]$N0),ncol=4,dimnames = list(c("Year_0"),colnames))
-      
-      matrix_patch2<-matrix(data=c(para_patch2$N0/4,para_patch2$N0/2,para_patch2$N0/4,para_patch2$N0),ncol=4,dimnames = list(c("Year_0"),colnames))
-      
-      Patch_1_list<-list(parameters=parameter_list[[name]], matrix=matrix_patch1)
-      Patch_2_list<-list(parameters=para_patch2, matrix=matrix_patch2)
-      
-    for(r in 1:runs){
-        N1_new<-population_change(Patch_1_list$matrix,parameter_list[[name]])
-        N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
-        
-        disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=parameter_list[[name]], parameter2=Patch_2_list$parameters, year=i,method="even")
-        
-        if(N1_new>0){
-        gamete_vector1<-gamete_production(disp_result$row1,parameter_list[[name]], N1_new)
-        result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))
-        }else{
-          result1<-matrix(data=c(0,0,0,0),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))}
-        
-        if(N2_new>0){
-        result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))
-        gamete_vector2<-gamete_production(disp_result$row2,Patch_2_list$parameters, N2_new)
-        }else{
-          result2<-matrix(data=c(0,0,0,0),ncol=4,dimnames = list(paste("Year_",r,sep=""),colnames))}
-        
-        Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
-        Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
-    }
-    differing_rates_1<-cbind(differing_rates_1,Patch_1_list$matrix)
-    differing_rates_2<-cbind(differing_rates_2,Patch_2_list$matrix)
-  }
-  list_differing_rate1[[paste("P1_",name,"_d=0.1_sc=0.05",sep="")]]<-differing_rates_1
-  list_differing_rate2[[paste("P2_",name,"_d=0.1_sc=0.05",sep="")]]<-differing_rates_2
-
+  para_patch1 <-parameter_list[[name]]
+  tables2<-run_several(repetitions = 50, years=100, paras1 = para_patch1, paras2=para_patch2)
+  tab1<-tables2[[1]]
+  tab2<-tables2[[2]]
+  AA_growth_differs[name]<-list(tab1)
+  BB_growth_differs[name]<-list(tab2)
 }
+
 ```
 
-```{r}
+```{r plot different growth}
 par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
-layout(matrix(c(1:3), nrow = 1))
-for (table in list_differing_rate2){
-many_plotted_lines(table,upper_y=550,axes=FALSE)
+layout(matrix(c(1:10), nrow = 2, byrow = FALSE))
+for (name in names(AA_growth_differs)){
+  many_plotted_lines(AA_growth_differs[[name]],upper_y=550,axes=FALSE)
   axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
   axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+  many_plotted_lines(BB_growth_differs[[name]],upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)  
 }
-```
-
-
-```{r}
 par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
-layout(matrix(c(1:3), nrow = 1), widths=c(1,1,1))
-for (table in list_differing_rate1){
-many_plotted_lines(to_plot=table, upper_y=550,axes=FALSE)
+layout(matrix(c(1:10), nrow = 2, byrow = FALSE))
+for (name in names(AA_growth_differs)){
+  many_plotted_lines(AA_growth_differs[[name]],upper_y=550,axes=FALSE,to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
   axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
   axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
-}
-```
-```{r}
-par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
-layout(matrix(c(1:2), nrow = 1), widths=c(5,3))
-many_plotted_lines(to_plot=differing_rates_2, upper_y=550,axes=FALSE)
+  many_plotted_lines(BB_growth_differs[[name]],upper_y=550,axes=FALSE,to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
   axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
-  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
-many_plotted_lines(to_plot=list_of_matrices_2$`P2_d=0.15_sc=0.05_run=10`, upper_y=550,axes=FALSE, to_vis=(AA=TRUE, AB=TRUE, BB=TRUE))
-  axis(1, at=c(0,100,200,300), labels = FALSE,tck = 0.02)
-  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)  
+}
+
 ```
+Looking at these graphs of different rates for b, l_max for the A-favored patch, while the values for b and l_max stays the same for all runs, given symmetric selection coefficients and constant dispersal rates of 0.1, we cannot see significant differences between the two. Also, given that the values for b, l_max grow from left to right for the row of graphs for the AA-favored patch, we'd expect to see some kind of trendline, if this parameter would change the population composition. As we do not observe any of this, we can conclude that changes of b, l_max in the range of 0.0008 to 0.0012, respective 1.4 to 1.6 do not lead to relevant changes.
+
 
 #- Es gibt nur einen Patch, bei dem überhaupt gejagt wird/die Population kurzzeitig stark eingeschränkt sein kann.
 
@@ -740,7 +777,7 @@ many_plotted_lines(to_plot=list_of_matrices_2$`P2_d=0.15_sc=0.05_run=10`, upper_
 -   Variable Parameter für Populationsentwicklung
 -   Dispersion rate könnte von Gesamtmenge im Patch abhängen
 
-```{r}
+```{r Dangerous world, population dependent dispersal}
 set.seed(53)
 different_recovery=list(prob_of_crash=c(0.1,0.1), crash_severity=c(0.7,0.7), dangers1=TRUE, dangers2=TRUE, depletion=c(3.0,3.0), ressource_decline=c(0.1,0.1),recovery=c(0.5,0.5),min_pop=c(30,30))
 
@@ -758,14 +795,39 @@ para_patch2<-list(N0=200, b=0.0011, l_max=1.55,
 four_tables<-run_several(repetitions = 40, years=600,record_disp=TRUE,disp_method = "population_dependent", paras1 = para_patch1, paras2=para_patch2, dangers = different_recovery)
 
 ```
+Same parameters except dispersal. Due to the many years with minimal dispersal, the even rate is approximatevily set to 0.05
+```{r Dangerous world, even dispersal}
+set.seed(53)
+different_recovery=list(prob_of_crash=c(0.1,0.1), crash_severity=c(0.7,0.7), dangers1=TRUE, dangers2=TRUE, depletion=c(3.0,3.0), ressource_decline=c(0.1,0.1),recovery=c(0.5,0.5),min_pop=c(30,30))
+
+selection_coefficient <- 0.05
+heterozygote_coefficient <-0.5
+
+para_patch1<-list(N0=200, b=0.0009, l_max=1.45, 
+                  wanderlust=1, dispersal_prob=0.05,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
+
+para_patch2<-list(N0=200, b=0.0011, l_max=1.55,
+                  wanderlust=1, dispersal_prob=0.05,
+                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
+
+four_tables_even<-run_several(repetitions = 40, years=600,record_disp=TRUE,disp_method = "even", paras1 = para_patch1, paras2=para_patch2, dangers = different_recovery)
+
+```
 
 ```{r}
 par(cex=0.7, mai=c(0.2,0.1,0.2,0.1), oma=c(2,1,2,0))
-layout(matrix(c(1:2), nrow = 1, ncol = 2)  )
-many_plotted_lines(slower_recov_A, to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE),upper_y=425, axes=FALSE, title="AA")
+layout(matrix(c(1:4), nrow = 2, ncol = 2, byrow=FALSE)  )
+many_plotted_lines(slower_recov_A, to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE),upper_y=425, axes=FALSE, title="AA-even dispersal")
   axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
   axis(2,at=c(0,100,200,300,400), labels=FALSE,tck = 0.02)
-many_plotted_lines(faster_recov_B, to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE), upper_y=425,axes=FALSE, title="BB")
+many_plotted_lines(faster_recov_B, to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE), upper_y=425,axes=FALSE, title="BB-even dispersal")
+  axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400), labels=FALSE,tck = 0.02)
+many_plotted_lines(four_tables_even[[1]], to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE),upper_y=425, axes=FALSE, title="AA-pop.dependent dispersal")
+  axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400), labels=FALSE,tck = 0.02)
+many_plotted_lines(four_tables_even[[2]], to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE), upper_y=425,axes=FALSE, title="BB-pop.dependent dispersal")
   axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
   axis(2,at=c(0,100,200,300,400), labels=FALSE,tck = 0.02)
 ```
@@ -790,3 +852,89 @@ many_plotted_lines(faster_recov_B[,(4*i-3):(4*i)],upper_y=620, to_vis=list(AA=TR
   axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
 }  
 ```
+
+```{r}
+#four_tables[[3]] #1 to 2
+#four_tables[[4]] #2 to 1
+get_disperal_change<-function(matrix1,matrix2, pos=0){
+  dispersal_visualized<-matrix(data=NA, nrow=0, ncol=4, dimnames = list(c(),c("Year","Genotype","From one", "From two")))
+  
+  for (i in 1:dim(matrix1)[1]){
+    year<-i
+    for (c in 1:3){
+      genotype<-colnames(matrix1)[c+pos]
+      change<- matrix1[i,(c+pos)]-matrix2[i,(c+pos)]
+      new_data<-c(year, genotype,ifelse(change<=0,0,change), ifelse(change>=0, 0, change)) #always pos, always neg
+
+      dispersal_visualized<-rbind(dispersal_visualized,new_data)
+    }
+  }
+  return(dispersal_visualized)
+}  
+#needed format:
+#Year Genotype Number
+#1         AA    23
+#1         AB    47
+#1         BB    25
+```
+
+```{r}
+change_plot<-function(matrix1, matrix2, column_shift=0){
+  to_vis<-as.data.frame(get_disperal_change(matrix1=matrix1,matrix2 = matrix2, pos=column_shift))
+  
+  to_vis$Genotype<-as.factor(to_vis$Genotype)
+  to_vis$Year<-as.numeric(to_vis$Year)
+  to_vis$`From one`<-as.numeric(to_vis$`From one`)
+  to_vis$`From two`<-as.numeric(to_vis$`From two`)
+  
+  
+  to_plot<-ggplot(to_vis,aes(x = Year, y = `From one`, fill = Genotype)) +
+    geom_area(position="stack")+
+    geom_area(aes(y=`From two`),position = "stack")+
+    geom_hline(aes(yintercept = 0)) +
+    scale_fill_manual(values = c("red","violet","blue"))+
+    theme_minimal()+
+    theme(axis.text.x=element_blank(),axis.text.y=element_blank(),legend.position="none",plot.margin = unit(c(0, 0, 0, 0), "cm"))+
+    labs(title=NULL,x=NULL, y=NULL)
+  
+  return(to_plot)
+}
+change_plot(four_tables[[3]],four_tables[[4]],column_shift =3)
+```
+
+```{r}
+test_fun<-function(i){
+slower_recov_A<-four_tables[[1]]
+faster_recov_B<-four_tables[[2]]
+#AA_plot_list<-list()
+#BB_plot_list<-list()
+
+
+plot_title=""
+par(mai=rep(0.1, 4))
+many_plotted_lines(slower_recov_A[,(4*i-3):(4*i)],upper_y=620,to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE, show_mean=FALSE), axes=FALSE,title=plot_title,transparency = 1,labels=FALSE)
+AA_plot<-recordPlot()
+
+par(mai=rep(0.1, 4))
+many_plotted_lines(faster_recov_B[,(4*i-3):(4*i)],upper_y=620, to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE, show_mean=FALSE), axes=FALSE,title=plot_title, transparency = 1,labels=FALSE)
+BB_plot<-recordPlot()
+
+new_start_pos<-(i-1)*3
+plot_grid(nrow = 3,
+          rel_heights=c(1,2,1),
+          BB_plot, 
+          change_plot(four_tables[[3]],four_tables[[4]],column_shift = new_start_pos), 
+          AA_plot)
+
+}
+test_fun(1)
+
+```
+
+Probably due to the storage of plot objects, or due to an issue with tried applied-threading, this can't be run in a loop
+```{r}
+test_fun(2)
+test_fun(3)
+test_fun(4)
+```
+
