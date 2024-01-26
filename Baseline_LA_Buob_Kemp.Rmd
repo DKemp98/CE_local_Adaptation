@@ -280,7 +280,7 @@ run_several<-function(repetitions,years,paras1,paras2,one_result=FALSE, disp_met
 }
 
 ```
-``
+
 
 
 ```{r}
@@ -318,16 +318,17 @@ many_plotted_lines<-function(to_plot,upper_y=500,to_vis=list(AA=TRUE,AB=TRUE,BB=
     }
   }
   
-  if(to_vis$AA && to_vis$show_mean){
+  #if(to_vis$AA && to_vis$show_mean){
+  if(to_vis$show_mean){
     mean_AA_1<-apply(to_plot[,str_detect(colnames(to_plot),"AA")],1, mean)
     lines(mean_AA_1,col="darkred",lwd=2,lty=3)}
-  if(to_vis$AB && to_vis$show_mean){
+  if(to_vis$show_mean){
     mean_AB_1<-apply(to_plot[,str_detect(colnames(to_plot),"AB")],1, mean)
     lines(mean_AB_1,col="darkviolet",lwd=2,lty=3)}
-  if(to_vis$BB && to_vis$show_mean){
+  if(to_vis$show_mean){
     mean_BB_1<-apply(to_plot[,str_detect(colnames(to_plot),"BB")],1, mean)
     lines(mean_BB_1,col="darkblue",lwd=2,lty=3)}
-  if(to_vis$overall && to_vis$show_mean){
+  if(to_vis$show_mean){
     mean_overall<-apply(to_plot[,str_detect(colnames(to_plot),"overall")],1, mean)
     lines(mean_overall,col="black",lwd=2,lty=3)}
   
@@ -520,54 +521,16 @@ legend("bottom",
 
 
 ```{r}
-set.seed(53)
-different_recovery=list(prob_of_crash=c(0.1,0.1), crash_severity=c(0.7,0.7), dangers1=TRUE, dangers2=TRUE, depletion=c(3.0,3.0), ressource_decline=c(0.1,0.1),recovery=c(0.5,0.5),min_pop=c(30,30))
-
-selection_coefficient <- 0.05
-heterozygote_coefficient <-0.5
-
-para_patch1<-list(N0=200, b=0.0009, l_max=1.45, 
-                  wanderlust=1, dispersal_prob=0.1,
-                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
-
-para_patch2<-list(N0=200, b=0.0011, l_max=1.55,
-                  wanderlust=1, dispersal_prob=0.1,
-                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
-
-four_tables<-run_several(repetitions = 10, years=600,record_disp=TRUE,disp_method = "population_dependent", paras1 = para_patch1, paras2=para_patch2, dangers = different_recovery)
-
+many_plotted_lines(faster_recov_B, upper_y = 400, to_vis=list(AA=FALSE, AB=FALSE,BB=FALSE,overall=FALSE,legend=TRUE, show_mean=TRUE))
 ```
 
-```{r Vis different recovery ratesfig.height=7, fig.width=17}
-slower_recov_A<-four_tables[[1]]
-faster_recov_B<-four_tables[[2]]
-par(cex=0.7, mai=c(0.06,0.06,0.06,0.06), oma=c(5,1,4,0))
-layout(matrix(c(1:10), nrow = 5, ncol = 2,byrow=TRUE)  )
-
-for (i in 6:10){
-  ifelse(i==1, plot_title<-"AA-favored, slow recovery",plot_title<-"")
-many_plotted_lines(slower_recov_A[,(4*i-3):(4*i)],upper_y=620,to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE, show_mean=FALSE), axes=FALSE,title=plot_title,transparency = 1)
-  axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
-  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
-
-ifelse(i==1, plot_title<-"BB-favored, faster recovery",plot_title<-"")
-  
-many_plotted_lines(faster_recov_B[,(4*i-3):(4*i)],upper_y=620, to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE, show_mean=FALSE), axes=FALSE,title=plot_title, transparency = 1)
-  axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
-  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
-}  
-#par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
- #  plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
-#legend("topright",
-#  c("AB individuals", "AA individuals", "mean AB", "mean AA"), lty=c(1,1,3,3), lwd=c(3,3,2,2), cex=0.8, col=c(alpha("violet",0.4),alpha("red",0.4), "darkviolet","darkred"), box.col=NA, horiz = TRUE, xpd=TRUE)
-```
 
 ```{r }
 par(cex=0.7, mai=c(0.06,0.06,0.06,0.06), oma=c(5,2,4,2))
 layout(matrix(c(1:2), nrow = 2, ncol = 1,byrow=TRUE)  )
 
-to_plot1<-slower_recov_A[,37:40]
-to_plot2<-faster_recov_B[,37:40]
+to_plot1<-slower_recov_A[,13:16]
+to_plot2<-faster_recov_B[,13:16]
 
 assign_primary_color<-function(matrix){
   color<-c()
@@ -596,4 +559,4 @@ draw_crashes(to_plot1)
 plot(to_plot2[,4], type="p",col=assign_primary_color(to_plot2),pch=5)
 draw_crashes(to_plot2)
 ```
-
+#Mögliche Visualisierungen dieses Problems: Zeige auf einer gemeinsamen Achse Dispersal von Patch A zu B an- zwischen den 
