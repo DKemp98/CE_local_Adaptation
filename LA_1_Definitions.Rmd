@@ -1,0 +1,485 @@
+---
+title: "Definitions"
+author: "Daniela Kemp, Dominik Buob"
+date: "2024-01-27"
+output: html_document
+---
+
+Installation and Package loading
+```{r Packages, message=FALSE, warning=FALSE, include=FALSE}
+library("ggplot2")
+library('dplyr')
+library('Rlab')
+library('stringr')
+library('forecast')
+library("patchwork")
+#install.packages("reshape2")
+library("reshape2")
+library("cowplot") 
+```
+ALL THE FOLLOWING FUNCTIONS, UP TO AND FUSION SHOULD HAVE ONE OR TWO MATRICES AS AN INPUT
+
+#Population Change Function to model population development in one year, given parameters:
+
+  -Matrix: One matrix we are working on
+  -Parameters: a corresponding list of parameters
+Returns a single number, the number of individuals in the new generation
+```{r Population Change}
+population_change <- function(matrix,parameters, ...) {
+  #N0=10, b=0.001, l_max=1.4,
+    N<-tail(matrix[,"overall"],1)
+    Fec     <- parameters$l_max / (1 + parameters$b *N )            
+    indFec  <- rpois(n=N, lambda=Fec) 
+    new_Generation<-N*mean(indFec)
+  return(new_Generation)
+}
+```
+#Dispersal Function to model dispersal in one patch in one year given parameters:
+
+  -matrix1,matrix2: The tables for the numbers of individuals of each genotype
+  -parameter1, parameter2: the parameterlists for both patches, most importantly dispersal_prob, l_max and b to compute the max population
+  -year: to be recorded in the result
+  -method: a string, options are defined for "default" and "population_dependent"
+
+Output: a list of two matrices of one row, both showing the new population, and two matrices of one row showing the dispersal
+```{r Dispersal}
+randomly_drawn<-function(n,p){
+  return(sum(rbern(n,p)))
+}
+
+
+return_prob<-function(n,N_max,max_disp){
+      of_stable<-n/N_max
+      limit<-((1.08*of_stable)**3)*1.7
+      return((sum(rlogis(50, location=2.2)<limit)/50)*max_disp)
+}
+
+dispersal<-function(matrix1, matrix2, parameter1,parameter2, year, method="default",  ...){
+  last_row1<-tail(matrix1,n=1)
+  last_row2<-tail(matrix2,n=1)
+  n1<-last_row1[,"overall"]
+  n2<-last_row2[,"overall"]
+
+  pop_max1<-  (parameter1$l_max-1)/parameter1$b
+  pop_max2<-  (parameter2$l_max-1)/parameter2$b
+  
+  disp_prob1<-case_when(method=="even" ~ parameter1$dispersal_prob,
+                        method=="population_dependent" ~ return_prob(n=n1,N_max=pop_max1,max_disp=parameter1$dispersal_prob),
+                        TRUE ~ 0.1)
+  
+  disp_prob2<-case_when(method=="even" ~ parameter2$dispersal_prob,
+                        method=="population_dependent" ~ return_prob(n=n2,N_max=pop_max2,max_disp=parameter2$dispersal_prob),
+                        TRUE ~ 0.1)
+  
+  d_1to2<-floor(last_row1[,c("AA","AB","BB")]*disp_prob1)
+  d_2to1<-floor(last_row2[,c("AA","AB","BB")]*disp_prob2)
+  
+  change_1<-c(d_2to1-d_1to2,sum(d_2to1)-sum(d_1to2))
+  change_2<-c(d_1to2-d_2to1,sum(d_1to2)-sum(d_2to1))
+  
+  new_row1<-matrix(data=c(last_row1+change_1),ncol = 4, dimnames = list(paste("Year_",year,sep=""),colnames(matrix1)))
+  
+  new_row2<-matrix(data=c(last_row2+change_2),ncol = 4, dimnames = list(paste("Year_",year,sep=""),colnames(matrix1)))
+  return(list(row1=new_row1,row2=new_row2,d_1to2=d_1to2,d_2to1=d_2to1))
+}
+```
+#Gamete Production population: models the gamete production of one entire population, produces list of gametes.Parameters:
+
+  -Matrix: standard matrix
+  -parameters: corresponding parameters, here we use s: selection coefficient, h: heterozygote coefficient
+Output: a vector of Gametes, in the form of c("A","A","A","B","B","B")
+
+```{r Gamete Production}
+gamete_production<-function(matrix, parameters, ...){
+
+unfavored<-ifelse(parameters$favored=="AA", "BB","AA")
+favored<-parameters$favored
+
+prob_unfavored<-(1-parameters$s)
+prob_heterozygen<-(1-parameters$h*parameters$s)
+prob_favored<-1
+
+fmax<-20 #each individual should produce this number of gametes. We chose 20 as a default value, as the value had a large influence on the runtime, and 20 gametes allows both more gamete production than we ever need, while not being excessively large.
+
+#Getting the number of gametes produced by each genotype 
+favored_mult<-ceiling(2*matrix[,favored]*prob_favored*fmax) #N(favored)*fmax*1*2
+unfavored_mult<-ceiling(2*matrix[,unfavored]*prob_unfavored*fmax) #N(unfavord)*fmax*(1-s)*2
+heterozygen_mult<-ceiling(matrix[,"AB"]*prob_heterozygen*fmax)#N(heterozygote)*(1-hs)
+if(favored_mult<0||class(favored_mult)!="numeric"){favored_mult<-0}
+if(unfavored_mult<0||class(unfavored_mult)!="numeric"){unfavored_mult<-0}
+if(heterozygen_mult<0||class(heterozygen_mult)!="numeric"){heterozygen_mult<-0}
+
+gamete_vector<-rep(substr(favored,1,1),favored_mult)
+gamete_vector<-c(gamete_vector,rep(substr(unfavored,1,1),unfavored_mult))
+gamete_vector<-c(gamete_vector,rep("A",heterozygen_mult),rep("B",heterozygen_mult))
+return(gamete_vector)
+}
+```
+
+#Fusion models the fusion of gametes in one patch. Parameters:
+
+  -gamete_vector - a vector/list of gametes, from which two gametes are randomly sampled until N individuals are created reached. 
+  -n: number of individuals that should be in the patch at the end
+
+Output: a vector with 4 numbers, describing the number of individuals in a patch with the genotypes A,AB,BB, overall
+
+```{r Fusion}
+Fusion<-function(gamete_vector,N){ 
+  A<-0
+  B<-0
+  M<-0
+  num_gametes<-length(gamete_vector)
+  
+  #the vector of gametes is randomly sampled in-place
+  ifelse(N*2>num_gametes,
+    final_gametes<-gamete_vector[sample(num_gametes)],  #if the number of gametes*2 is smaller than N_new, we use a vector of shuffled indices the length of the gamete vector
+    final_gametes<-gamete_vector[sample(num_gametes,size=N*2,replace=FALSE)]) # if there are enough gametes, we only use a number of random indices twice the new population number
+
+  
+    for (i in seq(1,length(final_gametes)-1,2)){
+      first<-final_gametes[i]
+      second<-final_gametes[i+1]
+      ifelse(first==second,
+            ifelse(first=="A",
+                    A<-A+1,
+                    B<-B+1),
+           M<-M+1)
+  }
+  return(c(A,M,B,A+B+M))
+}
+```
+#Definition of combined function. 
+Here, we model the changing genotype frequency in two patches of several years, given the parameters of patches as input. In order,we:
+1. simulate dispersal 
+2. we adjust the populations of both patches to account for dispersal
+3. we compute a new population size for both patches
+(3.1  possibly, a catastrophic event occurs, reducing the population size for the next generation)
+(3.2  possibly, patches are depleted by the new population size)
+4. we build gamete vectors for both patches
+5. the gamete vectors are sampled to produce new individuals equal to the population size for the next generation
+6. those are stored
+
+Required parameters: 
+  -repetitions: how often should the whole simulation be run
+  -years: how many generations each simulation should include
+  -paras1,paras2: the relevant parameters for both patches
+  
+Optional parameters:
+  -one_result: whether to return one matrix or not. Defaults to FALSE, as a distinction between patches is useful in most cases
+  -record_disp: whether to return two additional matrices, that detail the yearly dispersal. Defaults to FALSE
+  - disp_method: how to compute dispersal. Options are: "even" & "population_dependent". Using even dispersal,the same ratio of indiviuals -given by dispersal_prob in patch- will leave the patch without regard for how crowded the patch is. Using population_dependent, a random number of individuals - capped by the parameter disp_prob- will leave the patch, which is more likely the closer the population is to the stable population
+
+  -dangers: A list of parameters detailing how the population may face additional challenges
+    -dangers1,dangers2: whether to use resource depletion and population crashes for each patch. Defaults to FALSE 
+    -prob_of_crash: vector of length two, the probability of a sudden reduction of population 1, population 2, in a given year
+    -crash_severity: vector of length two, the min. ratio of individuals that would die off in a crash. The maximum ratio is defined as 0.2 higher. Defaults to 0.7, 0.7, meaning that both in  patch 1 and 2 70% to 90% of individuals would die in a crash
+    -min_pop: vector of length two, detailing the population that patches won't fall below. This is used as to not have any patch die off due to a high frequency of crashes. (Extinction due to bad luck after a a crash is still possible)
+    -depletion: vector of length two, detailing on which current population to stable population ratio both patches will face resource depletion and be reduced in their ability to support individuals
+    -resource_decline: vector of length two, detailing how much the patch carrying capacity is reduced if it is depleted. Defaults to 0.1,0.1, meaning that for both patches, the resources would be reduced by 10% in any given year where the depletion rate is reached. This is done by reducing l_max. 
+    -recovery: vector of length two, detailing how large the current population/stable population ratio can be at most to allow a recovery of the patch.
+
+Output: one, two or four matrices in a list, default two matrices. The first matrix stores the genotype frequency for patch 1, the second for patch 2. The matrices have a size of (years+1) x (4*repetitions), and each matrix stores all the runs on a certain patch, where each run got 4 columns named "AA", "AB", "BB","overall". 
+One matrix may also be an output, this matrix has the dimensions (years+1) x (8*repetitions), and stores both patches in one table. This is only used when we have a selection coefficient of 0 for both patches.
+Four matrices would include the genotype frequencies for both patches, as well as two matrices detailing how many individuals of each genotype leave patch 1 and patch 2 respectively. These matrices have a size of years x 3*repetitions and have for each run the columns: "AA", "AB", "BB"
+```{r Definition of combined function}
+run_several<-function(repetitions,years,paras1,paras2,one_result=FALSE,record_disp=FALSE, disp_method="even", dangers=list(dangers1=FALSE, dangers2=FALSE,prob_of_crash=c(0,0), crash_severity=c(0.7,0.7),min_pop=c(20,20), depletion=c(2.0,2.0), resource_decline=c(0.1,0.1),recovery=c(0.8,0.8)))
+  {
+  if(record_disp){
+    disp_patch_1<-matrix(nrow=years+1,ncol=0)
+    disp_patch_2<-matrix(nrow=years+1,ncol=0)
+  }
+  patch1_result<-matrix(nrow=years+1,ncol=0)
+  patch2_result<-matrix(nrow=years+1,ncol=0)
+  
+  for (i in 1:repetitions){
+    matrix_patch1<-matrix(data=c(paras1$N0/4,paras1$N0/2,paras1$N0/4,paras1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+    matrix_patch2<-matrix(data=c(paras2$N0/4,paras2$N0/2,paras2$N0/4,paras2$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+    
+    if(record_disp){
+      disp_matrix_1<-matrix(data=c(0,0,0),ncol=3,nrow=1,dimnames = list(c("Year_0"),c("AA","AB","BB")))
+      disp_matrix_2<-matrix(data=c(0,0,0),ncol=3,nrow=1,dimnames = list(c("Year_0"),c("AA","AB","BB")))
+    }
+    Patch_1_list<-list(parameters=paras1, matrix=matrix_patch1)
+    Patch_2_list<-list(parameters=paras2, matrix=matrix_patch2)
+  
+    max_pop1<-(paras1$l_max-1)/paras1$b
+    max_pop2<-(paras2$l_max-1)/paras2$b
+    
+    for(i in 1:years){
+      
+        #Compute new population number for both patches      
+        if(dangers$dangers1){
+          #crash patch 1
+          if(runif(1)<dangers$prob_of_crash[1]){
+            N1_post_crash<-ceiling(tail(Patch_1_list$matrix[,"overall"],1)*(1-runif(2,dangers$crash_severity[1],dangers$crash_severity[1]+0.2)))
+            N1_new<-max(dangers$min_pop[1],N1_post_crash)
+          }else{
+          N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)
+          #resource depletion patch 1
+          if ((N1_new/max_pop1)>=dangers$depletion[1]){
+            Patch_1_list$parameters$l_max<-Patch_1_list$parameters$l_max*(1-dangers$resource_decline[1])
+          }
+          if ((N1_new<=dangers$recovery[1])&&(Patch_1_list$parameters$l_max!=paras1$l_max)){
+            Patch_1_list$parameters$l_max<-min(Patch_1_list$parameters$l_max*(1+dangers$resource_decline[1]),paras1$l_max)}}
+        }else{ #No Danger for patch 1
+        N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)}
+        
+        if(dangers$dangers2){
+          #Crash patch 2
+          if(runif(1)<dangers$prob_of_crash[2]){
+            N2_post_crash<-ceiling(tail(Patch_2_list$matrix[,"overall"],1)*(1-runif(2,dangers$crash_severity[2],dangers$crash_severity[2]+0.2)))
+            N2_new<-max(dangers$min_pop[2],N2_post_crash)
+          }else{
+            N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
+            #Resource depletion patch 2
+            if ((N2_new/max_pop2)>=dangers$depletion[2]){
+              Patch_2_list$parameters$l_max<-Patch_2_list$parameters$l_max*(1-dangers$resource_decline[2])}
+            if ((N2_new<=dangers$recovery[2])&&(Patch_2_list$parameters$l_max!=paras2$l_max)){
+              Patch_2_list$parameters$l_max<-min(Patch_2_list$parameters$l_max*(1+dangers$resource_decline[2]),paras2$l_max)}}
+        }else{ #no danger for patch 2
+        N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)}
+        
+      #Compute dispersal from both patches
+        disp_result<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_2_list$parameters, year=i,method=disp_method)
+        
+        if(record_disp){
+          disp_matrix_1<-rbind(disp_matrix_1,disp_result$d_1to2)
+          disp_matrix_2<-rbind(disp_matrix_2,disp_result$d_2to1)
+        }
+        #Compute new gamete vectors
+        gamete_vector1<-gamete_production(disp_result$row1,Patch_1_list$parameters)
+        gamete_vector2<-gamete_production(disp_result$row2,Patch_2_list$parameters)
+        
+        result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+        result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+        
+        Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
+        Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
+    }
+    #coerce data to the right format
+    if (one_result){
+    patch1_result<-cbind(patch1_result,Patch_1_list$matrix,Patch_2_list$matrix)}
+    else{
+      patch1_result<-cbind(patch1_result,Patch_1_list$matrix)
+      patch2_result<-cbind(patch2_result,Patch_2_list$matrix)
+      if(record_disp){
+        disp_patch_1<-cbind(disp_patch_1,disp_matrix_1)
+        disp_patch_2<-cbind(disp_patch_2,disp_matrix_2)
+      }
+    }
+  }
+  ifelse(one_result,
+         return(patch1_result),
+         ifelse(record_disp,
+                return(list(patch1_result,patch2_result,disp_patch_1,disp_patch_2)),
+                return(list(patch1_result,patch2_result))
+         )
+  )
+}
+```
+
+#Definition of Plotting function
+This plot will be used excessively, as it allows both to represent every single datapoint and to have an overall representation of genotype changes over several runs. Basically, it plots each genotype's frequency (y-axis) vs time (x-axis), using red to represent "AA", violet to represent "AB" and blue to represent "BB"
+
+Parameters:
+
+  -to_plot: a matrix that we intent to plot. This matrix has to have column names with "AA","BB", "AB", "overall", as substrings, or nothing will be visualized.
+  -upper_y: Defaults to 500,upper limit of the y-Axis. R-given default values did not work here, as plot uses the max values*1.04 of one column, and we aggregate several column in one plot, sometimes clipping some lines if the value is not adjusted. stable population+50 is a good choice here.
+  -title: defaults to "", empty string. Title of the plot
+  -transparency: defaults to 0.25, how to adjust the alpha value or transparency of non-aggregated data
+  -axes: defaults to true, whether to draw axes or not. Useful to set to false if several plots are combined and the axis tick labels would interfere with labels
+  -labels: defaults to TRUE, whether to have labels. If true, the y-Axis is labeled with "individuals (N)" and the x-axis is labeled with "generations"
+  -to_vis: list of what to specifically show.
+    AA,AB,BB,overall: default to TRUE, whether to show for each run the genotype frequency for these columns
+    show_mean: defaults to TRUE, whether to show the aggregated mean over all runs, if the previous values are FALSE, this instead shows a smoothed mean
+    legend: whether or not to show a legend. 
+
+```{r Plot Def}
+many_plotted_lines<-function(to_plot,upper_y=500,title="",transparency=0.25, axes=TRUE,labels=TRUE,to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE, show_mean=TRUE)){
+  faint_lines<-(to_vis$AA||to_vis$AB||to_vis$BB||to_vis$overall)
+  column_names<-c("AA","AB","BB","overall")
+  ifelse(to_vis$legend,upper_y<-upper_y*1.1,upper_y<-upper_y)
+  plot(to_plot[,"overall"], col=alpha("black",0), lty=1, lwd=1, las=1, type="l", pch=16,bty="l",xaxs="i",yaxs="i", xlab=ifelse(labels,"generations",""), ylab=ifelse(labels,"individuals (N)",""), ylim=c(0,upper_y),main=title,axes=axes) 
+   
+  colors<-c("red","violet","blue","black")
+  for (i in 1:dim(to_plot)[2]){
+    which_type<-str_detect(colnames(to_plot)[i],column_names)
+    if(sum(which_type)>0){
+      yes_no<-to_vis[[column_names[which_type]]]
+      if (yes_no){
+        lines(to_plot[,i], lty=1, col=alpha(colors[which_type],transparency), lwd=1)}}}
+  
+  if(to_vis$AA && to_vis$show_mean){
+    mean_AA_1<-apply(to_plot[,str_detect(colnames(to_plot),"AA")],1, mean)
+    lines(mean_AA_1,col="darkred",lwd=2.5,lty=4)}
+  if(to_vis$AB && to_vis$show_mean){
+    mean_AB_1<-apply(to_plot[,str_detect(colnames(to_plot),"AB")],1, mean)
+    lines(mean_AB_1,col="darkviolet",lwd=2.5,lty=4)}
+  if(to_vis$BB && to_vis$show_mean){
+    mean_BB_1<-apply(to_plot[,str_detect(colnames(to_plot),"BB")],1, mean)
+    lines(mean_BB_1,col="darkblue",lwd=2.5,lty=4)}
+  if(to_vis$overall && to_vis$show_mean){
+    mean_overall<-apply(to_plot[,str_detect(colnames(to_plot),"overall")],1, mean)
+    lines(mean_overall,col="black",lwd=2.5,lty=4)}
+  if(!faint_lines && to_vis$show_mean){
+      mean_AA_1<-apply(to_plot[,str_detect(colnames(to_plot),"AA")],1, mean)
+      lines(ma(mean_AA_1, order=7),col="darkred",lwd=2.5,lty=5)
+      mean_AB_1<-apply(to_plot[,str_detect(colnames(to_plot),"AB")],1, mean)
+      lines(ma(mean_AB_1, order=7),col="darkviolet",lwd=2.5,lty=5)
+      mean_BB_1<-apply(to_plot[,str_detect(colnames(to_plot),"BB")],1, mean)
+      lines(ma(mean_BB_1, order=7),col="darkblue",lwd=2.5,lty=5)
+      mean_overall<-apply(to_plot[,str_detect(colnames(to_plot),"overall")],1, mean)
+      lines(ma(mean_overall,order=7),col="black",lwd=2.5,lty=5)}
+  
+  if(to_vis$legend&&faint_lines){
+  legend("topright",
+    c("genotype AA", "genotype AB", "genotype BB","all individuals" ),inset=c(0,0.02), lty=1, lwd=1.8, cex=0.7, col=c(alpha("red",transparency*2), alpha("violet",transparency*2),alpha("blue",transparency*2),alpha("black",transparency*2)), box.col=NA, horiz = TRUE, xpd=TRUE)}
+  if(to_vis$legend&&to_vis$show_mean){
+  legend("topright",
+    c("mean AA", "mean AB", "mean BB", "mean overall"),inset=c(0,-0.08), lty=4, lwd=2, cex=0.7, col=c("darkred", "darkviolet","darkblue","black"), box.col=NA, horiz = TRUE, xpd=TRUE)
+    }
+}
+```
+
+Input: One list of matrices. These matrices should have the standard output of run_several(). Output: a specific matrix, well suited for ggplots, showing the percentage of generations where the genotype "AA" or"BB" was found in at least 60,70,80, 90 or 100% of the individuals.
+```{r Trying a different visualization}
+dominance_count<-function(list_of_matrices=list_of_matrices_2){
+  
+  extinction_counts<-matrix(data=0,ncol=12,nrow=0,dimnames = list(c(),c("AA60","BB60","AA70","BB70","AA80","BB80","AA90","BB90","AA100","BB100","selection_coef","disp_coef")))
+
+  single_row<-matrix(data=0,ncol=12,nrow=1,dimnames = list(c(),c("AA60","BB60","AA70","BB70","AA80","BB80","AA90","BB90","AA100","BB100","selection_coef","disp_coef")))  
+  percentages<-seq(60,100,10)/100
+  
+
+  for (name in names(list_of_matrices)){
+    cur_matrix<-list_of_matrices[[name]]
+    runs<-floor(dim(cur_matrix)[2]/4)
+    size<-dim(cur_matrix)[1]
+    first_useful_row<-str_detect(colnames(cur_matrix[,1:4]),"AA") %>% which()
+    
+    for(r in 1:runs){
+        single_row<-matrix(data=0,ncol=12,nrow=1,dimnames = list(c(),c("AA60","BB60","AA70","BB70","AA80","BB80","AA90","BB90","AA100","BB100","selection_coef","disp_coef"))) 
+      AA<-first_useful_row+(4*(r-1))
+      BB<-first_useful_row+2+(4*(r-1))
+      overall<-first_useful_row+4*r-1
+      #print(colnames(cur_matrix[,c(AA,BB,overall)]))
+      
+      colnum<-0
+      for(p in percentages){
+        colnum <- colnum+1
+        single_row[1,colnum]<-sum((cur_matrix[,AA]/cur_matrix[,overall])>=p)/size
+        #print(sum((cur_matrix[,AA]/cur_matrix[,overall])>=p))
+        colnum <- colnum+1
+        single_row[1,colnum]<-sum((cur_matrix[,BB]/cur_matrix[,overall])>=p)/size
+        #print(sum(cur_matrix[,BB]/cur_matrix[,overall]>=p))
+      }
+      single_row[1,colnum+1]<-str_extract(name,"(?<=sc=)(([:digit:][:punct:]*[:digit:]+)|0)")
+      single_row[1,colnum+2]<-str_extract(name,"(?<=d=)(([:digit:][:punct:][:digit:]+)|0)")
+      extinction_counts<-rbind(extinction_counts,single_row)
+    }
+  }
+  return(extinction_counts)
+}
+#str_match(names(list_of_matrices_1),"(?<=d=)([:digit:]|\\.)*")
+```
+
+Input: 4 tables, as produced by run_several, if we record dispersal
+```{r Define a plot of the net dispersal between both plots, given the dispersal tables}
+#table[[3]] #1 to 2
+#table[[4]] #2 to 1
+get_disperal_change<-function(matrix1,matrix2, pos=0){
+  dispersal_visualized<-matrix(data=NA, nrow=0, ncol=4, dimnames = list(c(),c("Year","Genotype","From one", "From two")))
+  
+  for (i in 1:dim(matrix1)[1]){
+    year<-i
+    for (c in 1:3){
+      genotype<-colnames(matrix1)[c+pos]
+      change<- matrix1[i,(c+pos)]-matrix2[i,(c+pos)]
+      new_data<-c(year, genotype,ifelse(change<=0,0,change), ifelse(change>=0, 0, change)) #always pos, always neg
+
+      dispersal_visualized<-rbind(dispersal_visualized,new_data)
+    }
+  }
+  return(dispersal_visualized)
+}  
+#needed format:
+#Year Genotype Number
+#1         AA    23
+#1         AB    47
+#1         BB    25
+
+possible_indices<-union(union(seq(0,600,100), seq(0,300,50)), union(seq(0,125,25),c(5,10,20,40))) %>% sort()
+
+change_plot<-function(matrix1, matrix2, column_shift=0){
+  to_vis<-as.data.frame(get_disperal_change(matrix1=matrix1,matrix2 = matrix2, pos=column_shift))
+  
+  to_vis$Genotype<-as.factor(to_vis$Genotype)
+  to_vis$Year<-as.numeric(to_vis$Year)
+  to_vis$`From one`<-as.numeric(to_vis$`From one`)
+  to_vis$`From two`<-as.numeric(to_vis$`From two`)
+  
+  #get the max amount of dispersal for the less strongly dispersed patch
+  smallupto<-min(to_vis$`From one` %>% max(),to_vis$`From two` %>% min() %>% abs())
+  mark<-possible_indices[which.min(abs(smallupto-possible_indices))]
+  
+  to_plot<-ggplot(to_vis,aes(x = Year, y = `From one`, fill = Genotype)) +
+    geom_area(position="stack")+
+    geom_area(aes(y=`From two`),position = "stack")+
+    geom_hline(aes(yintercept = 0)) +
+    scale_fill_manual(values = c("red","violet","blue"))+
+    theme_minimal()+
+    scale_x_continuous(expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0, 0))+
+    theme(axis.text.x=element_blank(),axis.text.y=element_blank(),legend.position="none",plot.margin = unit(c(0.1, 0.1, 0.1, 0.51), "in"))+
+    geom_text(aes(label=mark, y=mark,x=0, size=2), hjust = "inward")+
+    geom_text(aes(label=paste0("-",mark), y=(-mark),x=0,size=2), hjust = "inward")+
+    labs(title=NULL,x=NULL, y=NULL)
+  return(to_plot)
+}
+change_plot(four_tables[[3]],four_tables[[4]],column_shift =3)
+```
+
+```{r Define a plot object showing both patch 1 and two and the dispersal between}
+Combined_with_dispersal<-function(i, table1,table2, table3, table4){
+  slower_recov_A<-table1[,(4*i-3):(4*i)]
+  faster_recov_B<-table2[,(4*i-3):(4*i)]
+  #AA_plot_list<-list()
+  #BB_plot_list<-list()
+  
+  
+  plot_title=""
+  par(mai=c(0.1,0.51, 0.1,0.1))
+  Ax<-dim(slower_recov_A)[1]
+  A_upto<-max(slower_recov_A)
+  many_plotted_lines(slower_recov_A,upper_y=A_upto*1.1,to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE,show_mean=FALSE), axes=TRUE,title=plot_title,transparency = 1,labels=TRUE)
+  #axis(1, at=seq(0,Ax-(Ax%%100), 100), labels = FALSE,tck = -0.01,xaxs="i")
+  #axis(2,at=seq(0,A_upto-(A_upto%%100),100), labels=FALSE,tck = -0.01,yaxs = "i")
+  AA_plot<-recordPlot()
+  
+  
+  par(mai=c(0,0.51, 0.1,0.1))
+  
+  B_upto<-max(faster_recov_B)
+  Bx<-dim(faster_recov_B)[1]
+  many_plotted_lines(faster_recov_B,upper_y=B_upto*1.1,to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE,show_mean=FALSE), axes=TRUE,title=plot_title, transparency = 1,labels=TRUE)
+  #axis(1, at=seq(0,Bx-(Bx%%100),100), labels = FALSE,tck = -0.01, xaxs="i")
+  #axis(2,at=seq(0,B_upto-(B_upto%%100),100), labels=FALSE,tck = -0.01,yaxs = "i")
+  BB_plot<-recordPlot()
+  
+  max<-0;for(k in (1:(dim(table4)[2]))){lookat<-table4[,k];cur_max<-max(lookat);if(cur_max>max){max<-cur_max}}
+  
+  new_start_pos<-(i-1)*3
+  vis_buffer_height<-0
+  ifelse(max>100,vis_buffer_height<-3,vis_buffer_height<-0)
+  
+  #print(paste(vis_buffer_height,class(vis_buffer_height)))
+  plot_grid(nrow = 5,
+            rel_heights=c(14,7,11,4,14),
+            BB_plot, 
+            NULL,
+            labels = c("Patch 2-faster recovery, (B favored)","Dispersal","","","Patch 1-slower recovery, (A favored)"),
+            change_plot(table3,table4,column_shift = new_start_pos), 
+            NULL,
+            AA_plot)
+}
+```

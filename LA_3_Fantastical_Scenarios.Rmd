@@ -1,0 +1,695 @@
+---
+title: "Simulations II additional parameters"
+author: "Daniela Kemp, Dominik Buob"
+date: "2024-01-27"
+output: html_document
+---
+
+###Changing Environment
+In our previous models, the populations stayed mostly stable after an initial growth. In the next section, we want to explore changing environment conditions. Here, we wish to look at different parameters: 
+
+- The populations change at a different rate, but keep the same maximum stable populations size. A short run- not pictured- showed that differing b, l_max, do not matter for stable populations, as the 7-10 generations to reach the stable populations size may vary more due to random chance than due to differences in average growth, and any advantage a faster growing population has is pretty miniscule and will only be relevant for these first generations. We also decided against larger differences in growth, as we try to stay conservative with our assumptions about differences in populations.
+
+- The populations may 'crash' randomly - meaning that a random factor will reduce the population size drastically, allowing it to rebound, or be taken over by dispersed individuals from the other patch. We chose to always have a small amount of survivors after a crash, to keep the established populations somewhat relevant, and not only having random clusters of crashes being the most important factor in the development of phenotypic diversity
+
+- The population may, if growing too large, consume more resources then the environment is able to replenish, resulting in an reduction of l_max. Also, l_max may recover if the population grows small enough. Here, we want to both see if- and using which threshold for collapse - a patch may go extinct.We would also like to explore how different rates of dispersal may influence this - our first hypothesis is that small dispersal will be beneficial for the recovery of a collapsed patch, as this will limit the amount of individuals consuming the resources during recovery.
+
+-We also try a different method for dispersal, population dependent. Here, we aim to have little dispersal if the population is not at least at 70% of its maximum dispersal, than a near logarithmic growth which tappers off near 120% of the stable population, as this is in most cases the largest a population will ever reach. A single factor may be given to set a maximal dispersal rate
+----------------------------------------------------------------------------------------------------------------
+##Preliminary looks at the influence of those parameters
+#different rates of growth
+```{r Parameter exploration for b and l_max}
+par(cex=0.6, mai=c(0.2,0.2,0.2,0.2), oma=c(5,1,4,0))
+colnames<-c("AA","AB","BB","overall")
+layout(matrix(c(1:4), nrow = 1))
+get_data_draw_box<-function(n){
+  b_0009<-c()
+  b_001<-c()
+  b_0011<-c()
+  sample_matrix<-matrix(data=c(0,0,0,n),ncol=4,dimnames = list("Test",colnames))
+  para_0009<-list(N0=200, b=0.0009, l_max=1.45)
+  para_001<-list(N0=200, b=0.001, l_max=1.5)
+  para_0011<-list(N0=200, b=0.0011, l_max=1.55)
+  for(i in 1:1000){
+    b_0009<-c(b_0009,population_change(sample_matrix,para_0009)-n)
+    b_001<-c(b_001,population_change(sample_matrix,para_001)-n)
+    b_0011<-c(b_0011,population_change(sample_matrix,para_0011)-n)
+  }
+  to_plot<-matrix(data=c(b_0009,b_001,b_0011),ncol = 3, dimnames = list(c(1:1000),c("b=0.0009, l_max=1.45","b=0.001, l_max=1.5","b=0.0011, l_max=1.55")))
+  boxplot(to_plot, main=paste("Change-",n," individuals"),labels=FALSE,xaxt="n", xlabel="",cex=0.6, col=c("rosybrown1","rosybrown3","rosybrown4"),ylim=c(-120,120))
+}
+
+for (num in c(50,125,250,500)){
+  get_data_draw_box(num)
+}
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+   plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
+legend("bottom",c("b=0.0009, l_max=1.45","b=0.001, l_max=1.5","b=0.0011, l_max=1.55"), fill=c("rosybrown1","rosybrown3","rosybrown4"),cex=1.6, box.col=NA, horiz = TRUE, xpd=TRUE)
+```
+These boxplots allow us to learn some things about the different growth szenarios - a high b and l_max will lead to a more steady and strong growth while the maintenance population is not reached, as the change is generally more positive and less likely to fall close to zero. Having reached the maintenance population, little difference is visible, although there might be a small chance in the variance, with a lower variance for higher b, l_max.
+
+
+Looking at the absolute growth of a population using different b, l_max, and the initial population size of 200.
+First, looking at different parameters for growth. Will different b, l_max influence the overall rates of A and B in both populations?
+
+```{r contrast different growth}
+set.seed(44)
+selection_coefficient <- 0.05
+heterozygote_coefficient <-0.5
+dispersal_prob <- 0.1
+
+list_differing_rate1<-list()
+list_differing_rate2<-list()
+
+parameter_list<-list(smallest=list(N0=200, b=0.0008, l_max=1.4,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
+                  small=list(N0=200, b=0.0009, l_max=1.45,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
+                  medium=list(N0=200, b=0.001, l_max=1.5,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
+                  large=list(N0=200, b=0.0011, l_max=1.55,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
+                  largest=list(N0=200, b=0.0012, l_max=1.6,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient))
+
+para_patch2<-list(N0=200, b=0.001, l_max=1.5,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
+AA_growth_differs<-list()
+BB_growth_differs<-list()
+for(name in names(parameter_list)){
+  para_patch1 <-parameter_list[[name]]
+  tables2<-run_several(repetitions = 50, years=100, paras1 = para_patch1, paras2=para_patch2)
+  tab1<-tables2[[1]]
+  tab2<-tables2[[2]]
+  AA_growth_differs[name]<-list(tab1)
+  BB_growth_differs[name]<-list(tab2)
+}
+
+```
+
+```{r plot different growth}
+par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
+layout(matrix(c(1:10), nrow = 2, byrow = FALSE))
+for (name in names(AA_growth_differs)){
+  many_plotted_lines(AA_growth_differs[[name]],upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+  many_plotted_lines(BB_growth_differs[[name]],upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)  
+}
+par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
+layout(matrix(c(1:10), nrow = 2, byrow = FALSE))
+for (name in names(AA_growth_differs)){
+  many_plotted_lines(AA_growth_differs[[name]],upper_y=550,axes=FALSE,to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+  many_plotted_lines(BB_growth_differs[[name]],upper_y=550,axes=FALSE,to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)  
+}
+
+```
+```{r}
+par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(4,1,4,0))
+layout(matrix(c(1:2), nrow = 1, byrow = TRUE))
+
+  many_plotted_lines(AA_growth_differs[[1]],upper_y=600,axes=FALSE,to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+  many_plotted_lines(AA_growth_differs[[3]],upper_y=600,axes=FALSE,to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)  
+
+```
+
+Looking at these graphs of different rates for b, l_max for the A-favored patch, while the values for b and l_max stays the same for all runs, given symmetric selection coefficients and constant dispersal rates of 0.1, we cannot see significant differences between the two. Also, given that the values for b, l_max grow from left to right for the row of graphs for the AA-favored patch, we'd expect to see some kind of trendline, if this parameter would change the population composition. As we do not observe any of this, we can conclude that changes of b, l_max in the range of 0.0008 to 0.0012, respective 1.4 to 1.6 do not lead to relevant changes.
+
+#Population dependent dispersal
+The population_dependent option in dispersal has different values depending on the ratio of current population/stable population. Here, we use a transformed ratio of the ratio current population/max population and take the ratio of random realizations above that as a  percentage. This results in dispersal rates close to zero for small populations, but more varied and larger rates for populations close, or above the maximum stable population size. Due to a linear factor, the results all fall between 0 and 0.25.
+```{r Testing population dependent dispersal}
+to_try<-seq(50,650,25)/500
+empty<-matrix(data=NA,nrow=20,ncol=length(to_try))
+colnames(empty)<-to_try
+for(i in 1:dim(empty)[1]){
+  k<-0
+  for (z in to_try){
+    k<-k+1
+    test_scale<-((1.08*z)**3)*1.7
+    empty[i,k]<-(sum(rlogis(50, location=2.2)<test_scale)/50)*0.25
+  }
+}
+boxplot(empty, main="Dispersal probability (limited to 0.25) vs \n current/sustainable population")
+```
+First, looking at different parameters for growth. Will different b, l_max influence the overall rates of A and B in both populations?
+
+```{r contrast different growth}
+set.seed(44)
+selection_coefficient <- 0.05
+heterozygote_coefficient <-0.5
+dispersal_prob <- 0.1
+
+list_differing_rate1<-list()
+list_differing_rate2<-list()
+
+parameter_list<-list(smallest=list(N0=200, b=0.0008, l_max=1.4,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
+                  small=list(N0=200, b=0.0009, l_max=1.45,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
+                  medium=list(N0=200, b=0.001, l_max=1.5,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
+                  large=list(N0=200, b=0.0011, l_max=1.55,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient),
+                  
+                  largest=list(N0=200, b=0.0012, l_max=1.6,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient))
+
+para_patch2<-list(N0=200, b=0.001, l_max=1.5,
+                  wanderlust=1, dispersal_prob=dispersal_prob,
+                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
+AA_growth_differs<-list()
+BB_growth_differs<-list()
+for(name in names(parameter_list)){
+  para_patch1 <-parameter_list[[name]]
+  tables2<-run_several(repetitions = 50, years=100, paras1 = para_patch1, paras2=para_patch2)
+  tab1<-tables2[[1]]
+  tab2<-tables2[[2]]
+  AA_growth_differs[name]<-list(tab1)
+  BB_growth_differs[name]<-list(tab2)
+}
+
+```
+
+```{r write/load data}
+#saveRDS(AA_growth_differs, file="AA_growth_differs.RData")
+#saveRDS(BB_growth_differs, file="BB_growth_differs.RData")
+
+AA_growth_differs<-readRDS("AA_growth_differs.RData")
+BB_growth_differs<-readRDS("BB_growth_differs.RData")
+```
+
+Verifying whether there is a perceivable difference between different growth rates
+```{r plot different growth}
+par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(3,2,7,0))
+layout(matrix(c(1:10), nrow = 2, byrow = FALSE))
+for (name in names(AA_growth_differs)){
+  many_plotted_lines(AA_growth_differs[[name]],upper_y=575,axes=FALSE)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+  many_plotted_lines(BB_growth_differs[[name]],upper_y=550,axes=FALSE)
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)  
+}
+mtext("Different Growth rates patch 1, consistent b,l_max in patch 2 \n selection coefficient=0.05, dispersal=0.1",side=3,cex=1.2, line= 2,outer=TRUE) 
+mtext("Patch 2: B favored                    Patch 1: A favored     ",                   
+      side = 2,
+      cex=0.9,
+      outer = TRUE)
+mtext("Patch 1:       b=0,0008,l_max=1.4            b=0.0009,l_max=1.45            b=0.001,l_max=1.5             b=0.0011,l_max=1.55           b=0.0012,l_max=1.6                    ",
+      side=3, 
+      cex=0.62,
+      outer=TRUE )
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+   plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
+
+legend("bottom",
+  c("mean AA", "mean AB", "mean BB", "mean overall"),inset=c(0,-0.00), lty=3, lwd=4, cex=1.1, col=c("darkred", "darkviolet","darkblue","black"), box.col=NA, horiz = TRUE, xpd=TRUE)
+
+
+par(cex=0.7, mai=c(0.1,0.1,0.1,0.1), oma=c(3,2,7,0))
+layout(matrix(c(1:10), nrow = 2, byrow = FALSE))
+for (name in names(AA_growth_differs)){
+  many_plotted_lines(AA_growth_differs[[name]],upper_y=550,axes=FALSE,to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+  many_plotted_lines(BB_growth_differs[[name]],upper_y=550,axes=FALSE,to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+  axis(1, at=c(0,100,200,300,400,500), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)  
+}
+mtext("Different Growth rates patch 1, consistent b,l_max in patch 2 \n selection coefficient=0.05, dispersal=0.1",side=3,cex=1.2, line= 2,outer=TRUE) 
+mtext("Patch 2: B favored                    Patch 1: A favored     ",                   
+      side = 2,
+      cex=0.9,
+      outer = TRUE)
+mtext("Patch 1:       b=0,0008,l_max=1.4            b=0.0009,l_max=1.45            b=0.001,l_max=1.5             b=0.0011,l_max=1.55           b=0.0012,l_max=1.6                    ",
+      side=3, 
+      cex=0.62,
+      outer=TRUE )
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+   plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
+
+legend("bottom",
+  c("mean AA", "mean AB", "mean BB", "mean overall"),inset=c(0,-0.00), lty=3, lwd=4, cex=1.1, col=c("darkred", "darkviolet","darkblue","black"), box.col=NA, horiz = TRUE, xpd=TRUE)
+```
+Looking at these graphs of different rates for b, l_max for the A-favored patch, while the values for b and l_max stays the same for all runs, given symmetric selection coefficients and constant dispersal rates of 0.1, we cannot see significant differences between the two. Also, given that the values for b, l_max grow from left to right for the row of graphs for the AA-favored patch, we'd expect to see some kind of trendline, if this parameter would change the population composition. As we do not observe any of this, we can conclude that changes of b, l_max in the range of 0.0008 to 0.0012, respective 1.4 to 1.6 do not lead to relevant changes.
+
+#Szenario: what if one patch is somewhat better suited for survival, allowing a stronger possible growth, while we have crashes in both?
+```{r Dangerous world, population dependent dispersal}
+set.seed(53)
+different_recovery=list(prob_of_crash=c(0.1,0.1), crash_severity=c(0.7,0.7), dangers1=TRUE, dangers2=TRUE, depletion=c(3.0,3.0), resource_decline=c(0.1,0.1),recovery=c(0.5,0.5),min_pop=c(30,30))
+
+selection_coefficient <- 0.05
+heterozygote_coefficient <-0.5
+
+para_patch1<-list(N0=200, b=0.0009, l_max=1.45, 
+                  dispersal_prob=0.15,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
+
+para_patch2<-list(N0=200, b=0.0011, l_max=1.55,
+                  dispersal_prob=0.15,
+                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
+
+four_tables<-run_several(repetitions = 40, years=600,record_disp=TRUE,disp_method = "population_dependent", paras1 = para_patch1, paras2=para_patch2, dangers = different_recovery)
+
+```
+Same parameters except dispersal. Due to the many years with minimal dispersal, the even rate is approximatvely set to 0.05
+```{r Dangerous world, even dispersal}
+set.seed(53)
+different_recovery=list(prob_of_crash=c(0.1,0.1), crash_severity=c(0.7,0.7), dangers1=TRUE, dangers2=TRUE, depletion=c(3.0,3.0), ressource_decline=c(0.1,0.1),recovery=c(0.5,0.5),min_pop=c(30,30))
+
+selection_coefficient <- 0.05
+heterozygote_coefficient <-0.5
+
+para_patch1<-list(N0=200, b=0.0009, l_max=1.45, 
+                  wanderlust=1, dispersal_prob=0.05,
+                  favored="AA", s=selection_coefficient,h=heterozygote_coefficient)
+
+para_patch2<-list(N0=200, b=0.0011, l_max=1.55,
+                  wanderlust=1, dispersal_prob=0.05,
+                  favored="BB", s=selection_coefficient,h=heterozygote_coefficient)
+
+four_tables_even<-run_several(repetitions = 40, years=600,record_disp=TRUE,disp_method = "even", paras1 = para_patch1, paras2=para_patch2, dangers = different_recovery)
+
+```
+Save/load the resulting data
+```{r save/load crash scenario using different dispersal}
+#saveRDS(four_tables, file="four_tables.RData")
+#saveRDS(four_tables_even, file="four_tables_even.RData")
+
+four_tables<-readRDS("four_tables.RData")
+four_tables_even<-readRDS("four_tables_even.RData")
+```
+
+Compare both approaches in their overall trends.
+```{r}
+par(cex=0.7, mai=c(0.2,0.1,0.2,0.1), oma=c(2,1,2,0))
+layout(matrix(c(1:2), nrow = 1, ncol = 2, byrow=FALSE)  )
+many_plotted_lines(slower_recov_A, to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE),upper_y=425, axes=FALSE, title="Patch 1 (A favored)-slower recovery, even dispersal")
+  axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400), labels=FALSE,tck = 0.02)
+many_plotted_lines(faster_recov_B, to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE), upper_y=425,axes=FALSE, title="Patch 2 (B favored)-faster recovery, even dispersal")
+  axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400), labels=FALSE,tck = 0.02)
+many_plotted_lines(four_tables_even[[1]], to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE),upper_y=425, axes=FALSE, title="Patch 1 (A favored)-slower recovery, pop.dependent dispersal")
+  axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400), labels=FALSE,tck = 0.02)
+many_plotted_lines(four_tables_even[[2]], to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE), upper_y=425,axes=FALSE, title="Patch 2 (B favored)-faster recovery, pop.dependent dispersal")
+  axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400), labels=FALSE,tck = 0.02)
+```
+Seeing this, we don't see a significant difference, In both cases the genotype favored in the patch with the higher recovery rate will prevail.
+Show the patches side by side, to allow a comparison
+```{r Vis different recovery ratesfig.height=7, fig.width=17}
+slower_recov_A<-four_tables[[1]]
+faster_recov_B<-four_tables[[2]]
+par(cex=0.7, mai=c(0.06,0.06,0.06,0.06), oma=c(5,1,4,0))
+layout(matrix(c(1:10), nrow = 5, ncol = 2,byrow=TRUE)  )
+
+for (i in 1:40){
+  ifelse(i%%5==1, plot_title<-"AA-favored, slow recovery",plot_title<-"")
+many_plotted_lines(slower_recov_A[,(4*i-3):(4*i)],upper_y=620,to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE, show_mean=FALSE), axes=FALSE,title=plot_title,transparency = 1)
+  axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+
+ifelse(i%%5==1, plot_title<-"BB-favored, faster recovery",plot_title<-"")
+  
+many_plotted_lines(faster_recov_B[,(4*i-3):(4*i)],upper_y=620, to_vis=list(AA=TRUE,AB=TRUE,BB=TRUE,overall=TRUE,legend=FALSE, show_mean=FALSE), axes=FALSE,title=plot_title, transparency = 1)
+  axis(1, at=c(0,100,200,300,400,500,600), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+}  
+```
+```{r}
+Combined_with_dispersal(4, four_tables[[1]],four_tables[[2]], four_tables[[3]], four_tables[[4]])
+```
+
+##Heterozygote Favored situation
+
+Idea: look into heterozygote favored situations. Here we assume that one genotype is always disadvantageous, but the heterozygote genotype is favored in one patch. To achieve this, we set the heterozygote coefficient to -0.5.
+```{r Visualisation of a possible negative score for heterozygeous individuals}
+selection_coefficients<-c(0,0.025, 0.05,0.075)
+dispersal_probs<-c(0,0.025, 0.05,0.15)
+Gamete_Production_Probabilities<-data.frame(AA_prob=rep(1,4),AB_prob=c(1-(-0.5)*selection_coefficients), BB_prob=c(1-selection_coefficients))
+plot(Gamete_Production_Probabilities$AA_prob, col="red", type="b",main="Relative Gamete Production for each Genotype", pch=16,axes = FALSE, xlab="Selection coefficent", ylab="Gamete Production factor", ylim=c(0.8,1.15))
+axis(1, at=c(1,2,3,4), labels = selection_coefficients,tck = 0.02)
+axis(2, at=c(0.8,0.9,1,1.1), labels =c(0.8,0.9,1,1.1) ,tck = 0.02)
+abline(h=c(0.9,1,1.1), col="lightgrey")
+lines(Gamete_Production_Probabilities$AB_prob,col="violet",type="b", pch=16)
+lines(Gamete_Production_Probabilities$BB_prob,col="blue",type="b", pch=16)
+```
+
+
+```{r Heterozygote favored}
+set.seed(66)
+start_time<-Sys.time()
+
+selection_coefficients<-c(0,0.025, 0.05,0.075)
+
+dispersal_probs<-c(0,0.025, 0.05,0.075)
+
+heterozygote_matrix_no_advantage<-list()
+heterozygote_matrix_advantage<-list()
+
+for (s in selection_coefficients){
+  for(d in dispersal_probs){
+    para_patch1<-list(N0=400, b=0.001, l_max=1.4, 
+                    wanderlust=1, dispersal_prob=d,
+                    favored="AA", s=s,h=1)
+  
+    para_patch2<-list(N0=400, b=0.001, l_max=1.4,
+                    wanderlust=1, dispersal_prob=d,
+                    favored="AA", s=s,h=(-0.5))
+    
+    intermediate_result<-run_several(repetitions = 30, years=400, paras1 = para_patch1, paras2=para_patch2)
+    
+    Name1<-paste("P1_d=",d,"_sc=",s,sep="")
+    Name2<-paste("P2_d=",d,"_sc=",s,sep="")
+    heterozygote_matrix_no_advantage[[Name1]]<-intermediate_result[[1]]
+    heterozygote_matrix_advantage[[Name2]]<-intermediate_result[[2]]
+}}
+run_time<-Sys.time()-start_time
+
+```
+
+```{r Writing/Loading of het favored}
+#saveRDS(heterozygote_matrix_no_advantage, file="heterozygote_matrix_no_advantage.RData")
+#saveRDS(heterozygote_matrix_advantage, file="heterozygote_matrix_advantage.RData")
+
+heterozygote_matrix_no_advantage<-readRDS("heterozygote_matrix_no_advantage.RData")
+heterozygote_matrix_advantage<-readRDS("heterozygote_matrix_advantage.RData")
+```
+
+```{r Visualization of both patches}
+selection_coefficients<-c(0,0.025, 0.05,0.075)
+dispersal_probs<-c(0,0.025, 0.05,0.075)
+
+par(cex=0.7, mai=c(0.06,0.06,0.06,0.06), oma=c(5,1,4,0))
+layout(matrix(c(1:16), nrow = 4, byrow = FALSE))
+
+for (name in names(heterozygote_matrix_no_advantage)){
+  many_plotted_lines(to_plot=heterozygote_matrix_no_advantage[[name]],axes=FALSE, upper_y = 500, transparency=0.15)
+  axis(1, at=seq(0,400,100), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+}
+mtext("Heterozygote not advantageous, -Malaria-free patch",side=3,cex=1.2, line= 2,outer=TRUE) 
+
+selection_string<-paste(selection_coefficients,"                               ", collapse ="")
+mtext(paste("selection coefficent:",selection_string ),                   
+      side = 3,
+      cex=0.8,
+      outer = TRUE)
+disp_string<-paste(rev(dispersal_probs),"              ", collapse="")
+mtext(paste("         dispersal prob.:",disp_string ),                    
+      side=2, 
+      cex=0.8,
+      outer=TRUE )
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+   plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
+legend("bottom",
+  c("genotype AA", "genotype AB", "genotype BB"),inset=c(0,0.04), lty=1, lwd=4, cex=1.1, col=c(alpha("red",0.4), alpha("violet",0.4),alpha("blue",0.4)), box.col=NA, horiz = TRUE, xpd=TRUE)
+legend("bottom",
+  c("mean AA", "mean AB", "mean BB", "mean overall"),inset=c(0,-0.00), lty=3, lwd=4, cex=1.1, col=c("darkred", "darkviolet","darkblue","black"), box.col=NA, horiz = TRUE, xpd=TRUE)
+
+par(cex=0.7, mai=c(0.06,0.06,0.06,0.06), oma=c(5,1,4,0))
+layout(matrix(c(1:16), nrow = 4, byrow = FALSE))
+
+for (name in names(heterozygote_matrix_advantage)){
+  many_plotted_lines(to_plot=heterozygote_matrix_advantage[[name]],axes=FALSE, upper_y = 500,transparency = 0.15)
+  axis(1, at=seq(0,400,100), labels = FALSE,tck = 0.02)
+  axis(2,at=c(0,100,200,300,400,500), labels=FALSE,tck = 0.02)
+}
+mtext("Heterozygote advantageous -Malaria Hotspot patch",side=3,cex=1.2, line= 2,outer=TRUE) 
+
+selection_string<-paste(selection_coefficients,"                               ", collapse ="")
+mtext(paste("selection coefficent:",selection_string ),                   
+      side = 3,
+      cex=0.8,
+      outer = TRUE)
+disp_string<-paste(rev(dispersal_probs),"              ", collapse="")
+mtext(paste("         dispersal prob.:",disp_string ),                    
+      side=2, 
+      cex=0.8,
+      outer=TRUE )
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+   plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
+legend("bottom",
+  c("genotype AA", "genotype AB", "genotype BB"),inset=c(0,0.04), lty=1, lwd=4, cex=1.1, col=c(alpha("red",0.4), alpha("violet",0.4),alpha("blue",0.4)), box.col=NA, horiz = TRUE, xpd=TRUE)
+legend("bottom",
+  c("mean AA", "mean AB", "mean BB", "mean overall"),inset=c(0,-0.00), lty=3, lwd=4, cex=1.1, col=c("darkred", "darkviolet","darkblue","black"), box.col=NA, horiz = TRUE, xpd=TRUE)
+```
+```{r One other visualization method, to show how one genotype becomes dominant}
+#Suitable matrices to plot here would be:
+#list_of_matrices_1,list_of_matrices_2
+#heterozygote_matrix_no_advantage, heterozygote_matrix_advantage
+extinction_counts<-as.data.frame(dominance_count(list_of_matrices_2))
+
+col<-"BB60" #"BB60","BB70","BB80","BB90", "BB100"
+ggplot(extinction_counts, aes(x=selection_coef,group_by=selection_coef,y=extinction_counts[,col] %>% as.numeric, col=selection_coef))+geom_boxplot()+facet_wrap(~disp_coef)+theme(legend.position = "bottom")+labs(y=paste0("Percentage Generations having at least ",col, "%"), x="Different dispersal coefficients",title=paste0("Percentage Generations having at least ",col,"%"))#+geom_histogram(binwidth = 50)
+
+ggplot(extinction_counts, aes(x=disp_coef,group_by=disp_coef,y=extinction_counts[,col] %>% as.numeric, col=disp_coef))+geom_boxplot()+facet_wrap(~selection_coef, ncol=4)+theme(legend.position = "bottom")+labs(y=paste0("Percentage Generations having at least ",col,"%"), x="Different Selection coefficients",title=paste0("Percentage Generations having at least ",col,"%"))
+
+```
+
+
+#Source and Sink Dynamik-
+Pseudo Sink -Patch 4 can allow a stable population, but is driven above carrying capacity by the influx of other 
+Patch 1 to Patch 2&3, Patch 2 to 1&4, Patch 3 to 1&4, Patch 4 to 2&3 allowing resource depletion
+b=0.0012,l_max=1.6
+b=0.0008,l_max=1.4
+```{r Looking at four patches and the dispersal between them}
+set.seed(66)
+#b=0,0008,l_max=1.4 
+#b=0.0012,l_max=1.6
+paras1<-list(N0=320, b=0.0008,l_max=1.4 , 
+                  dispersal_prob=0.15,favored="AA", 
+                  s=0.075,h=0.5)
+
+paras2<-list(N0=320, b=0.0008,l_max=1.4 ,
+                  dispersal_prob=0.15,favored="BB", 
+                  s=0.025,h=0.5)
+
+paras3<-list(N0=320, b=0.0008,l_max=1.4 , 
+                  dispersal_prob=0.15,favored="AA", 
+                  s=0.025,h=0.5)
+
+paras4<-list(N0=320, b=0.0008,l_max=1.4 ,
+                  dispersal_prob=0.05,favored="BB", 
+                  s=0.075,h=0.5)
+
+dangers=list(prob_of_crash=rep(0.05,4), crash_severity=rep(0.6,4),min_pop=rep(20,4), depletion=rep(1.2,4), resource_decline=rep(0.1,4),recovery=rep(0.8,4))
+repetitions<-20
+years<-600
+
+
+
+spaghetti_four_patches<-function(paras1,paras2, paras3,paras4,repetitions,years, dangers){
+  patch1_result<-matrix(nrow=years+1,ncol=0)
+  patch2_result<-matrix(nrow=years+1,ncol=0)
+  patch3_result<-matrix(nrow=years+1,ncol=0)
+  patch4_result<-matrix(nrow=years+1,ncol=0)
+  
+for (r in 1:repetitions){
+    matrix_patch1<-matrix(data=c(paras1$N0/4,paras1$N0/2,paras1$N0/4,paras1$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+    matrix_patch2<-matrix(data=c(paras2$N0/4,paras2$N0/2,paras2$N0/4,paras2$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+    matrix_patch3<-matrix(data=c(paras3$N0/4,paras3$N0/2,paras3$N0/4,paras3$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+    matrix_patch4<-matrix(data=c(paras4$N0/4,paras4$N0/2,paras4$N0/4,paras4$N0),ncol=4,dimnames = list(c("Year_0"),c("AA","AB","BB","overall")))
+
+    Patch_1_list<-list(parameters=paras1, matrix=matrix_patch1)
+    Patch_2_list<-list(parameters=paras2, matrix=matrix_patch2)
+    Patch_3_list<-list(parameters=paras3, matrix=matrix_patch3)
+    Patch_4_list<-list(parameters=paras4, matrix=matrix_patch4)
+    
+    for(i in 1:years){
+      #Compute new population number for both patches     
+      max_pop1<-(paras1$l_max-1)/paras1$b
+      max_pop2<-(paras2$l_max-1)/paras2$b
+      max_pop3<-(paras3$l_max-1)/paras3$b
+      max_pop4<-(paras4$l_max-1)/paras4$b
+    
+
+      
+        #Compute new population number for both patches      
+          #crash patch 1
+          if(runif(1)<dangers$prob_of_crash[1]){
+            N1_post_crash<-ceiling(tail(Patch_1_list$matrix[,"overall"],1)*(1-runif(1,dangers$crash_severity[1],dangers$crash_severity[1]+0.2)))
+            N1_new<-max(dangers$min_pop[1],N1_post_crash)
+          }else{
+          N1_new<-population_change(Patch_1_list$matrix,Patch_1_list$parameters)
+          #resource depletion patch 1
+          if ((N1_new/max_pop1)>=dangers$depletion[1]){
+            print("Depletion Patch 1!")
+            print(paste(r,i))
+            Patch_1_list$parameters$l_max<-Patch_1_list$parameters$l_max*(1-dangers$resource_decline[1])
+          }
+          if ((N1_new<=dangers$recovery[1])&&(Patch_1_list$parameters$l_max!=paras1$l_max)){
+            print("Recovery Patch 1")
+            print(paste(r,i))
+
+            Patch_1_list$parameters$l_max<-min(Patch_1_list$parameters$l_max*(1+dangers$resource_decline[1]),paras1$l_max)}}
+
+          #Crash patch 2
+          if(runif(1)<dangers$prob_of_crash[2]){
+            N2_post_crash<-ceiling(tail(Patch_2_list$matrix[,"overall"],1)*(1-runif(1,dangers$crash_severity[2],dangers$crash_severity[2]+0.2)))
+            N2_new<-max(dangers$min_pop[2],N2_post_crash)
+          }else{
+            N2_new<-population_change(Patch_2_list$matrix,Patch_2_list$parameters)
+            #Resource depletion patch 2
+            if ((N2_new/max_pop2)>=dangers$depletion[2]){
+              print("Depletion Patch 2!")
+              print(paste(r,i))
+
+              Patch_2_list$parameters$l_max<-Patch_2_list$parameters$l_max*(1-dangers$resource_decline[2])}
+            if ((N2_new<=dangers$recovery[2])&&(Patch_2_list$parameters$l_max!=paras2$l_max)){
+              print("Recovery Patch 2")
+              print(paste(r,i))
+
+              Patch_2_list$parameters$l_max<-min(Patch_2_list$parameters$l_max*(1+dangers$resource_decline[2]),paras2$l_max)}}
+      
+                #crash patch 3
+          if(runif(1)<dangers$prob_of_crash[3]){
+            N3_post_crash<-ceiling(tail(Patch_3_list$matrix[,"overall"],1)*(1-runif(1,dangers$crash_severity[3],dangers$crash_severity[3]+0.2)))
+            N3_new<-max(dangers$min_pop[3],N3_post_crash)
+          }else{
+          N3_new<-population_change(Patch_3_list$matrix,Patch_3_list$parameters)
+          #resource depletion patch 1
+          if ((N3_new/max_pop3)>=dangers$depletion[3]){
+            print("Depletion Patch 3!")
+            print(paste(r,i))
+            Patch_3_list$parameters$l_max<-Patch_3_list$parameters$l_max*(1-dangers$resource_decline[3])
+          }
+          if ((N3_new<=dangers$recovery[3])&&(Patch_3_list$parameters$l_max!=paras3$l_max)){
+            print("Recovery Patch 3")
+            print(paste(r,i))
+            Patch_3_list$parameters$l_max<-min(Patch_3_list$parameters$l_max*(1+dangers$resource_decline[3]),paras3$l_max)}}
+
+          #Crash patch 4
+          if(runif(1)<dangers$prob_of_crash[4]){
+            N4_post_crash<-ceiling(tail(Patch_4_list$matrix[,"overall"],1)*(1-runif(1,dangers$crash_severity[4],dangers$crash_severity[4]+0.2)))
+            N4_new<-max(dangers$min_pop[4],N4_post_crash)
+          }else{
+            N4_new<-population_change(Patch_4_list$matrix,Patch_4_list$parameters)
+            #Resource depletion patch 4
+            if ((N4_new/max_pop4)>=dangers$depletion[4]){
+              print("Depletion Patch 4!")
+              print(paste(r,i))
+              Patch_4_list$parameters$l_max<-Patch_4_list$parameters$l_max*(1-dangers$resource_decline[4])}
+            if ((N4_new<=dangers$recovery[4])&&(Patch_4_list$parameters$l_max!=paras4$l_max)){
+              print("Recovery Patch 4")
+              print(paste(r,i))
+              Patch_4_list$parameters$l_max<-min(Patch_4_list$parameters$l_max*(1+dangers$resource_decline[4]),paras4$l_max)}}
+
+      
+      #Compute dispersal from both patches
+      disp_12<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_2_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_2_list$parameters, year=i,method="population_dependent")
+      disp_13<-dispersal(matrix1=Patch_1_list$matrix,matrix2=Patch_3_list$matrix, parameter1=Patch_1_list$parameters, parameter2=Patch_3_list$parameters, year=i,method="population_dependent")
+      disp_24<-dispersal(matrix1=Patch_2_list$matrix,matrix2=Patch_4_list$matrix, parameter1=Patch_2_list$parameters, parameter2=Patch_4_list$parameters, year=i,method="population_dependent")
+      disp_34<-dispersal(matrix1=Patch_3_list$matrix,matrix2=Patch_4_list$matrix, parameter1=Patch_3_list$parameters, parameter2=Patch_4_list$parameters, year=i,method="population_dependent")
+      
+      new_freq1<-tail(Patch_1_list$matrix,1)+c(disp_12$d_2to1, sum(disp_12$d_2to1))- c(disp_12$d_1to2,sum(disp_12$d_1to2))+c(disp_13$d_2to1,sum(disp_13$d_2to1))-c(disp_13$d_1to2,sum(disp_13$d_1to2))
+      
+      new_freq2<-tail(Patch_2_list$matrix,1)+c(disp_12$d_1to2, sum(disp_12$d_1to2))- c(disp_12$d_2to1,sum(disp_12$d_2to1))+c(disp_24$d_2to1,sum(disp_24$d_2to1))-c(disp_24$d_1to2,sum(disp_24$d_1to2)) 
+      
+      new_freq3<-tail(Patch_3_list$matrix,1)+c(disp_13$d_1to2, sum(disp_13$d_1to2))- c(disp_13$d_2to1,sum(disp_13$d_2to1))+c(disp_34$d_2to1,sum(disp_34$d_2to1))-c(disp_34$d_1to2,sum(disp_34$d_1to2)) 
+      
+      new_freq4<-tail(Patch_4_list$matrix,1)+c(disp_24$d_1to2, sum(disp_24$d_1to2))- c(disp_24$d_2to1,sum(disp_24$d_2to1))-c(disp_34$d_2to1,sum(disp_34$d_2to1))+c(disp_34$d_1to2,sum(disp_34$d_1to2)) 
+      
+      #Compute new gamete vectors
+      gamete_vector1<-gamete_production(new_freq1,Patch_1_list$parameters)
+      gamete_vector2<-gamete_production(new_freq2,Patch_2_list$parameters)
+      gamete_vector3<-gamete_production(new_freq3,Patch_3_list$parameters)
+      gamete_vector4<-gamete_production(new_freq4,Patch_4_list$parameters)
+
+      result1<-matrix(data=Fusion(gamete_vector = gamete_vector1, N=N1_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+      result2<-matrix(data=Fusion(gamete_vector = gamete_vector2, N=N2_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+      result3<-matrix(data=Fusion(gamete_vector = gamete_vector3, N=N3_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+      result4<-matrix(data=Fusion(gamete_vector = gamete_vector4, N=N4_new),ncol=4,dimnames = list(paste("Year_",i,sep=""),c("AA","AB","BB","overall")))
+
+      Patch_1_list$matrix<-rbind(Patch_1_list$matrix,result1)
+      Patch_2_list$matrix<-rbind(Patch_2_list$matrix,result2)
+      Patch_3_list$matrix<-rbind(Patch_3_list$matrix,result3)
+      Patch_4_list$matrix<-rbind(Patch_4_list$matrix,result4)
+    }
+    #coerce data to the right format
+      patch1_result<-cbind(patch1_result,Patch_1_list$matrix)
+      patch2_result<-cbind(patch2_result,Patch_2_list$matrix)
+      patch3_result<-cbind(patch3_result,Patch_3_list$matrix)
+      patch4_result<-cbind(patch4_result,Patch_4_list$matrix)
+
+    
+}
+  return(list(patch1_result,patch2_result,patch3_result,patch4_result))
+  }
+```
+
+
+```{r Visualization four patches small fecundity}
+par(cex=0.5, mai=c(0.3,0.3,0.3,0.3), oma=c(5,2,4,1))
+layout(matrix(c(1:4), nrow = 2, ncol = 2,byrow=TRUE)  )
+many_plotted_lines(patch1_result, upper_y = 600, transparency=0.15,title = "Patch 1",to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+many_plotted_lines(patch2_result, upper_y = 600, transparency=0.15, title= "Patch 2",to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+many_plotted_lines(patch3_result, upper_y = 600, transparency=0.15, title = "Patch 3",to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+many_plotted_lines(patch4_result, upper_y = 600, transparency=0.15, title="Patch 4",to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+```
+1:2,2:5,3:4, 4:5
+
+```{r 4 Patches little dispersal from Patch 4}
+paras1<-list(N0=320, b=0.0012,l_max=1.6 , 
+                  dispersal_prob=0.15,favored="AA", 
+                  s=0.075,h=0.5)
+
+paras2<-list(N0=320, b=0.0012,l_max=1.6,
+                  dispersal_prob=0.15,favored="BB", 
+                  s=0.025,h=0.5)
+
+paras3<-list(N0=320, b=0.0012,l_max=1.6, 
+                  dispersal_prob=0.15,favored="AA", 
+                  s=0.025,h=0.5)
+
+paras4<-list(N0=320, b=0.0012,l_max=1.6,
+                  dispersal_prob=0.05,favored="BB", 
+                  s=0.075,h=0.5)
+
+dangers=list(prob_of_crash=rep(0.05,4), crash_severity=rep(0.6,4),min_pop=rep(20,4), depletion=rep(1.2,4), resource_decline=rep(0.1,4),recovery=rep(0.8,4))
+repetitions<-20
+years<-600
+set.seed(66)
+fast_recov4<-spaghetti_four_patches(paras1=paras1, paras2=paras2,paras3=paras3, paras4=paras4, dangers=dangers, repetitions = repetitions, years=years)
+
+```
+
+```{r}
+par(cex=0.5, mai=c(0.3,0.3,0.3,0.3), oma=c(5,2,4,1))
+layout(matrix(c(1:4), nrow = 2, ncol = 2,byrow=TRUE)  )
+title<-c("Patch 1", "Patch 2", "Patch 3", "Patch 4")
+for(i in 1:4){
+  many_plotted_lines(fast_recov4[[i]], upper_y = 600, transparency=0.15,title = title[i],to_vis=list(AA=FALSE,AB=FALSE,BB=FALSE,overall=FALSE,legend=FALSE, show_mean=TRUE))
+}
+```
+
