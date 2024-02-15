@@ -51,6 +51,8 @@ These boxplots allow us to learn some things about the different growth szenario
 
 Looking at the absolute growth of a population using different b, l_max, and the initial population size of 200.
 First, looking at different parameters for growth. Will different b, l_max influence the overall rates of A and B in both populations?
+
+LONG COMPUTATION, LOAD DATA BELOW INSTEAD
 ```{r contrast different growth}
 set.seed(44)
 selection_coefficient <- 0.05
@@ -199,6 +201,8 @@ four_tables<-run_several(repetitions = 40, years=600,record_disp=TRUE,disp_metho
 
 ```
 Same parameters except dispersal. Due to the many years with minimal dispersal, the even rate is approximatvely set to 0.05
+
+LONG COMPUTATION, LOAD DATA BELOW INSTEAD
 ```{r Dangerous world, even dispersal}
 set.seed(53)
 different_recovery=list(prob_of_crash=c(0.1,0.1), crash_severity=c(0.7,0.7), dangers1=TRUE, dangers2=TRUE, depletion=c(3.0,3.0), ressource_decline=c(0.1,0.1),recovery=c(0.5,0.5),min_pop=c(30,30))
@@ -284,6 +288,7 @@ lines(Gamete_Production_Probabilities$BB_prob,col="blue",type="b", pch=16)
 ```
 
 
+LONG COMPUTATION, LOAD DATA BELOW INSTEAD
 ```{r Heterozygote favored}
 set.seed(66)
 start_time<-Sys.time()

@@ -191,6 +191,7 @@ for(name in names(minimal_dispersal_population_change1)){
 ```
 Surprisingly, a higher population will not completely stop a genotype from rapidly dropping. Although a higher population seems to be make this more unlikely, so overall the dominant genotype will on average drift away from AB later on even in  larger stable populations. In any population with a stable population above and including 500, we do not observe any gene going completely extinct, as even thought the number of AA or BB individuals dropped to zero- or close to it- in some cases, AB kept being represented in the middle double digits. In the following, we will thus most often work with a stable population of 500.
 
+LONG COMPUTATION, LOAD DATA BELOW INSTEAD
 ```{r Parameter space exploration 1h+!, eval=FALSE, include=FALSE}
 set.seed(33)
 #Looking at a series of different selection coefficients, in a reasonable range (0 to 0.15, step size 0.025), as well as a series of dispersal probabilities (0 to 0.15, step size 0.025, as well as 0.5 to somewhat model a unified population with different factors that might decide each individuals reproductive success). Here, we repeat each simulation 10 times, while we model 500years.
