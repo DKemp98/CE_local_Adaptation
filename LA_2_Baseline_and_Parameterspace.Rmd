@@ -334,7 +334,7 @@ ggplot(data=data.frame(freq_time),aes(y=(as.numeric(A_501)/(as.numeric(B_501)+as
 #heterozygote_matrix_no_advantage, heterozygote_matrix_advantage
 extinction_counts<-as.data.frame(dominance_count(list_of_matrices_2))
 
-col<-"BB60" #"BB60","BB70","BB80","BB90", "BB100"
+col<-"BB90" #"BB60","BB70","BB80","BB90", "BB100"
 ggplot(extinction_counts, aes(x=selection_coef,group_by=selection_coef,y=extinction_counts[,col] %>% as.numeric, col=selection_coef))+geom_boxplot()+facet_wrap(~disp_coef)+theme(legend.position = "bottom")+labs(y=paste0("Percentage Generations having at least ",col, "%"), x="Different dispersal coefficients",title=paste0("Percentage Generations having at least ",col,"%"))#+geom_histogram(binwidth = 50)
 
 ggplot(extinction_counts, aes(x=disp_coef,group_by=disp_coef,y=extinction_counts[,col] %>% as.numeric, col=disp_coef))+geom_boxplot()+facet_wrap(~selection_coef, ncol=4)+theme(legend.position = "bottom")+labs(y=paste0("Percentage Generations having at least ",col,"%"), x="Different Selection coefficients",title=paste0("Percentage Generations having at least ",col,"%"))

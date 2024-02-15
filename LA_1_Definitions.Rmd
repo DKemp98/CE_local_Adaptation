@@ -436,7 +436,7 @@ change_plot<-function(matrix1, matrix2, column_shift=0){
     labs(title=NULL,x=NULL, y=NULL)
   return(to_plot)
 }
-change_plot(four_tables[[3]],four_tables[[4]],column_shift =3)
+#change_plot(four_tables[[3]],four_tables[[4]],column_shift =3)
 ```
 
 ```{r Define a plot object showing both patch 1 and two and the dispersal between}
