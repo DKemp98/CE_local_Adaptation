@@ -60,8 +60,8 @@ paras2<-list(N0=400, b=0.001, l_max=1.5,
                   dispersal_prob=0.1,favored="BB", 
                   s=0.05,h=0.5)
 
-repetitions<-10
-years<-200
+repetitions<-15
+years<-300
 patch1_result<-matrix(nrow=years+1,ncol=0)
 patch2_result<-matrix(nrow=years+1,ncol=0)
 
@@ -110,7 +110,7 @@ ggplot(to_plot, aes(x=value, group_by=Var2, fill=Var2))+
   theme(axis.ticks.y = element_blank())
 
 ```
-
+1.215231, 2.613,3.931085
 #Minimal example, two Patches, no advantages for either genotype, 500 years, to see how the stable population influences both run time and the chance for random extinction of one genotype
 ```{r Minimal example, explore max population}
 set.seed(12)

@@ -30,7 +30,8 @@ population_change <- function(matrix,parameters, ...) {
     N<-tail(matrix[,"overall"],1)
     Fec     <- parameters$l_max / (1 + parameters$b *N )            
     indFec  <- rpois(n=N, lambda=Fec) 
-    new_Generation<-N*mean(indFec)
+    #new_Generation<-N*mean(indFec)
+    new_Generation<-sum(indFec)
   return(new_Generation)
 }
 ```
